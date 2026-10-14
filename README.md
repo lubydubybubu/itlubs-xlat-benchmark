@@ -1,9 +1,13 @@
 # itlubs-xlat-benchmark
 
-Click-latency measurement tool used for the gear reviews on [itlubs.com](https://itlubs.com).
-A browser page talks to an [XLAT](https://github.com/teamfinalmouse/xlat) latency tester (or a TAB Rabbit device through a small Windows bridge), collects press/release latency samples, computes statistics and saves results to the site's benchmark database.
+Input-latency measurement tool used for the gear reviews on [itlubs.com](https://itlubs.com), for **mice and keyboards**:
 
-> 한국어 요약: itlubs.com 리뷰용 마우스·키보드 클릭 응답속도 측정 도구입니다. 브라우저에서 XLAT 측정기(Web Serial) 또는 TAB Rabbit(Windows 브리지 경유)에 연결해 누름/뗌 지연을 수집·통계 처리하고 사이트 DB에 저장합니다. 측정 웹은 XLAT 펌웨어를 수정해 웹에서 트리거를 걸 수 있게 했고, 그 패치를 함께 공개합니다.
+- **Mouse click latency** — an [XLAT](https://github.com/teamfinalmouse/xlat) tester (patched firmware) driven from the browser over Web Serial.
+- **Keyboard key latency** — a TAB Rabbit solenoid tester that physically presses the key; a small Windows bridge (`RabbitBridge`) drives it and times the OS key event, including Hall-effect / magnetic-switch keyboards.
+
+Both paths collect press/release latency samples in one web UI, compute statistics and save results to the site's benchmark database.
+
+> 한국어 요약: itlubs.com 리뷰용 **마우스·키보드 입력 지연 측정 도구**입니다. 마우스는 XLAT 측정기(Web Serial), 키보드는 전자석(솔레노이드)으로 키를 직접 누르는 TAB Rabbit을 Windows 브리지로 제어해(자석축/홀 키보드 포함) 누름/뗌 지연을 수집·통계 처리하고 사이트 DB에 저장합니다. 측정 웹은 XLAT 펌웨어를 수정해 웹에서 트리거를 걸 수 있게 했고, 그 패치를 함께 공개합니다.
 
 ## Contents
 
@@ -17,7 +21,7 @@ firmware/jlink/             J-Link Commander scripts (backup / flash / verify)
 
 ```mermaid
 flowchart LR
-  M[Mouse / keyboard under test] --> X[XLAT tester<br/>patched firmware]
+  M[Mouse under test] --> X[XLAT tester<br/>patched firmware]
   X -- USB CDC / Web Serial --> W[web/benchmark<br/>browser]
   M2[Keyboard under test] --> R[TAB Rabbit]
   R -- serial 921600 --> B[RabbitBridge.exe<br/>127.0.0.1:53941]
@@ -49,7 +53,10 @@ cmake .. -DCMAKE_TOOLCHAIN_FILE=arm-none-eabi.cmake -DCMAKE_BUILD_TYPE=Release &
 
 Both `itlubs-1.1.3` and `xlat-v1.4.0-web-trigger` were verified to apply and build with `gcc-arm-none-eabi` (Ubuntu 24.04); CI repeats this on every push. **Prebuilt firmware binaries are intentionally not included** — build from source. Flashing is at your own risk; take a backup first (`firmware/jlink/jlink-dump.jlink`).
 
-## Bridge
+## Keyboard bridge (TAB Rabbit)
+
+The vendor's own TAB Rabbit / KeyRabbit desktop app is closed-source and is **not** included or redistributed here; this repo contains only my bridge and web UI that talk to the device.
+
 
 ```sh
 cd bridge && dotnet publish -c Release   # Windows, .NET 9 SDK
