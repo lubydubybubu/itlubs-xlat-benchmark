@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="iTLUBS XLAT 마우스 클릭 응답속도 측정 데이터베이스">
+  <title>XLAT Benchmark Database | iTLUBS</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0b0f0d;--card:#121714;--line:#29322d;--text:#f1f5f2;--muted:#8b9790;--press:#ff7048;--release:#caff38;--blue:#8eb8ff}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 70% 0,#172019 0,transparent 35%),var(--bg);color:var(--text);font:14px/1.55 Arial,"Noto Sans KR",sans-serif}
+    a{color:inherit}.shell{width:min(1180px,calc(100% - 32px));margin:auto}.top{display:flex;justify-content:space-between;align-items:center;padding:22px 0;border-bottom:1px solid var(--line)}.brand{font-weight:900;letter-spacing:.08em;text-decoration:none}.brand b{color:var(--release)}.top nav{display:flex;gap:18px;color:var(--muted);font-size:12px}
+    .hero{padding:58px 0 30px}.eyebrow{margin:0;color:var(--release);font:700 11px/1 monospace;letter-spacing:.16em}.hero h1{margin:12px 0 8px;font-size:clamp(32px,6vw,64px);line-height:1}.hero p{max-width:680px;color:var(--muted)}
+    .toolbar{display:flex;gap:10px;margin:22px 0}.toolbar input{width:100%;padding:13px 15px;border:1px solid var(--line);background:var(--card);color:var(--text)}.toolbar a{padding:12px 16px;border:1px solid var(--release);color:var(--release);text-decoration:none;white-space:nowrap}
+    .importer{margin:0 0 16px;padding:14px;border:1px solid var(--line);background:rgba(18,23,20,.9)}.drop-zone{padding:22px;border:1px dashed #516057;text-align:center;color:var(--muted);cursor:pointer}.drop-zone:hover,.drop-zone.drag{border-color:var(--release);color:var(--release);background:rgba(202,255,56,.05)}.import-form{display:grid;grid-template-columns:1fr 1.5fr 1fr auto;gap:8px;margin-top:12px}.import-form[hidden]{display:none}.import-form input,.import-form select{min-width:0;padding:11px;border:1px solid var(--line);background:#0d120f;color:var(--text)}.import-form button{padding:10px 18px;border:1px solid var(--release);background:var(--release);color:#0b0f0d;font-weight:800;cursor:pointer}.import-status{margin:9px 2px 0;color:var(--muted);font:11px/1.5 monospace}
+    .layout{display:grid;grid-template-columns:320px 1fr;gap:16px;padding-bottom:60px}.panel{border:1px solid var(--line);background:rgba(18,23,20,.9)}.record-list{max-height:760px;overflow:auto}.record{display:block;width:100%;padding:17px;border:0;border-bottom:1px solid var(--line);background:none;color:var(--text);text-align:left;cursor:pointer}.record:hover,.record.active{background:#1b241e}.record strong,.record span{display:block}.record span{margin-top:4px;color:var(--muted);font:11px/1.4 monospace}.record em{color:var(--release);font-style:normal}
+    .empty{padding:50px 20px;text-align:center;color:var(--muted)}.detail{padding:24px;min-width:0}.detail-head{display:flex;justify-content:space-between;gap:15px;align-items:start}.detail h2{margin:4px 0;font-size:28px}.meta{color:var(--muted);font:11px/1.6 monospace}.profile{padding:7px 10px;border:1px solid var(--blue);color:var(--blue);font:11px/1 monospace;white-space:nowrap}.product-editor .danger{border-color:var(--press);background:transparent;color:var(--press)}.product-editor .danger:hover{background:var(--press);color:#fff}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:22px}.stat{padding:14px;border:1px solid var(--line);text-align:center}.stat span{display:block;color:var(--muted);font:10px/1.3 monospace}.stat strong{display:block;margin-top:9px;font:22px/1 monospace}.stat.press strong{color:var(--press)}.stat.release strong{color:var(--release)}.stat.usb strong{color:var(--blue)}
+    .section{margin-top:28px}.section h3{font-size:14px}.legend{display:flex;gap:16px;color:var(--muted);font:10px/1 monospace}.legend i{display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;background:var(--press)}.legend .release i{background:var(--release)}
+    .plot{position:relative;height:260px;margin-top:12px;border-left:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden;background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(25% - 1px),rgba(139,151,144,.14) 25%)}.dot{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--press);transform:translate(-50%,50%)}.dot.release{background:var(--release)}.plot-label{position:absolute;left:8px;top:8px;color:var(--muted);font:10px monospace}
+    .settings{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.setting{padding:12px;border:1px solid var(--line)}.setting span{color:var(--muted);font:10px monospace}.setting b{float:right;font-weight:500}.notes{padding:14px;border-left:2px solid var(--release);background:#0e1310;color:var(--muted)}
+    @media(max-width:760px){.layout{grid-template-columns:1fr}.record-list{max-height:320px}.stats{grid-template-columns:repeat(2,1fr)}.detail-head{flex-direction:column}.settings{grid-template-columns:1fr}.import-form{grid-template-columns:1fr}}
+  </style>
+  <link rel="stylesheet" href="/benchmark-theme.css?v=20260821-5">
+</head>
+<body>
+  <div class="shell">
+    <header class="top"><a class="brand" href="/"><span>LUBY<b>.</b></span><small>DATABASE</small></a><nav><a href="/benchmark/">측정하기</a><a href="/">홈</a></nav></header>
+    <main>
+      <div class="toolbar"><input id="search" type="search" placeholder="제조사·제품명·프로필 검색" aria-label="벤치마크 검색"><a href="/benchmark/">새 측정</a></div>
+      <section class="importer">
+        <div class="drop-zone" id="dropZone" role="button" tabindex="0">CSV 파일을 여기에 끌어다 놓거나 클릭해서 선택</div>
+        <input id="csvFile" type="file" accept=".csv,text/csv" hidden>
+        <form class="import-form" id="importForm" hidden>
+          <input id="importManufacturer" maxlength="100" placeholder="제조사">
+          <input id="importProduct" maxlength="160" placeholder="제품명 (필수)" required>
+          <input id="importProfile" maxlength="100" placeholder="프로필/설정">
+          <button type="submit">DB 저장</button>
+        </form>
+        <p class="import-status" id="importStatus">NeonTester CSV와 iTLUBS 내보내기 CSV를 지원합니다.</p>
+      </section>
+      <section class="layout">
+        <aside class="panel record-list" id="recordList"><p class="empty">측정 데이터를 불러오는 중입니다.</p></aside>
+        <article class="panel detail" id="detail"><p class="empty">제품을 선택하세요.</p></article>
+      </section>
+    </main>
+  </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const ms = (value) => `${(Number(value || 0) / 1000).toFixed(3)} ms`;
+    const hz = (center, deviation) => center + deviation > 0 ? `${Math.round(1000000 / (center + deviation)).toLocaleString("ko-KR")} Hz` : "—";
+    const safe = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+    let records = [];
+    let selectedId = "";
+    let importedSamples = [];
+    let importedFileName = "";
+
+    function recordLabel(record) { return [record.manufacturer, record.product].filter(Boolean).join(" "); }
+    function renderList() {
+      const query = $("search").value.trim().toLowerCase();
+      const visible = records.filter((record) => `${recordLabel(record)} ${record.profileName || ""}`.toLowerCase().includes(query));
+      $("recordList").innerHTML = visible.length ? visible.map((record) => `<button class="record ${record.id === selectedId ? "active" : ""}" data-id="${safe(record.id)}"><strong>${safe(recordLabel(record))}</strong><span>${safe(record.profileName || "기본 프로필")} · ${new Date(record.capturedAt).toLocaleDateString("ko-KR")}</span><span><em>${ms(record.stats.overall.average)}</em> · PRESS ${record.stats.press.count} / RELEASE ${record.stats.release.count}</span></button>`).join("") : '<p class="empty">검색 결과가 없습니다.</p>';
+    }
+    function renderPlot(record) {
+      const samples = record.samples.slice(-160);
+      const maximum = Math.max(3000, ...samples.map((sample) => sample.latencyUs));
+      return `<div class="plot"><span class="plot-label">0 – ${ms(maximum)}</span>${samples.map((sample, index) => `<i class="dot ${sample.edge === "release" ? "release" : ""}" style="left:${samples.length === 1 ? 50 : 2 + index / (samples.length - 1) * 96}%;bottom:${4 + sample.latencyUs / maximum * 88}%"></i>`).join("")}</div>`;
+    }
+    function renderDetail(record) {
+      if (!record) { $("detail").innerHTML = '<p class="empty">제품을 선택하세요.</p>'; return; }
+      const press = record.stats.press;
+      const release = record.stats.release;
+      const overall = record.stats.overall;
+      const setting = (name, value) => `<div class="setting"><span>${name}</span><b>${safe(value || "—")}</b></div>`;
+      $("detail").innerHTML = `<div class="detail-head"><div class="product-head"><p class="eyebrow">${safe(record.manufacturer || "MOUSE")}</p><div class="product-editor"><input id="productName" maxlength="160" value="${safe(record.product)}" aria-label="제품명"><button id="saveProduct" type="button">제품명 저장</button><button id="deleteRecord" class="danger" type="button">기록 삭제</button></div><p class="meta" id="productStatus">${safe(record.vidpid || "")} · ${new Date(record.capturedAt).toLocaleString("ko-KR")} · ${safe(record.xlatFirmware || "")}</p></div><span class="profile">${safe(record.profileName || "DEFAULT")}</span></div>
+        <div class="stats">
+          <div class="stat press"><span>PRESS 평균</span><strong>${ms(press.average)}</strong></div><div class="stat press"><span>PRESS 표준편차</span><strong>${ms(press.stdev)}</strong></div><div class="stat press"><span>PRESS 환산 Hz</span><strong>${hz(press.average, press.stdev)}</strong></div>
+          <div class="stat release"><span>RELEASE 평균</span><strong>${ms(release.average)}</strong></div><div class="stat release"><span>RELEASE 표준편차</span><strong>${ms(release.stdev)}</strong></div><div class="stat release"><span>RELEASE 환산 Hz</span><strong>${hz(release.average, release.stdev)}</strong></div>
+          <div class="stat"><span>종합 응답속도</span><strong>${ms(overall.average)}</strong></div><div class="stat"><span>종합 표준편차</span><strong>${ms(overall.stdev)}</strong></div><div class="stat usb"><span>실제 USB 폴링</span><strong>${Number(record.polling.measuredHz || record.polling.configuredHz || 0).toLocaleString("ko-KR")} Hz</strong></div>
+        </div>
+        <section class="section"><div class="detail-head"><h3>원본 샘플 분포</h3><div class="legend"><span><i></i>PRESS</span><span class="release"><i></i>RELEASE</span></div></div>${renderPlot(record)}</section>
+        <section class="section"><h3>측정 설정</h3><div class="settings">${setting("연결 방식", record.connection)}${setting("마우스 펌웨어", record.mouseFirmware)}${setting("폴링 설정", record.pollingSetting)}${setting("실측 USB 간격", record.polling.intervalUs ? `${record.polling.intervalUs} µs` : "")}${setting("디바운스", record.debounceSetting)}${setting("모션싱크", record.motionSync)}</div></section>
+        ${record.notes ? `<section class="section"><h3>메모</h3><p class="notes">${safe(record.notes)}</p></section>` : ""}`;
+    }
+    async function saveProductName() {
+      const record = records.find((item) => item.id === selectedId);
+      const product = $("productName")?.value.trim();
+      if (!record || !product) { $("productStatus").textContent = "제품명을 입력하세요."; return; }
+      $("saveProduct").disabled = true;
+      $("productStatus").textContent = "저장 중…";
+      try {
+        const response = await fetch(`/api/admin/benchmarks/${encodeURIComponent(record.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ product }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        record.product = result.record.product;
+        renderList();
+        renderDetail(record);
+      } catch (error) {
+        $("productStatus").textContent = error.message || "제품명을 변경하지 못했습니다.";
+        $("saveProduct").disabled = false;
+      }
+    }
+    async function deleteSelectedRecord() {
+      const index = records.findIndex((item) => item.id === selectedId);
+      const record = records[index];
+      if (!record || !window.confirm(`"${recordLabel(record)}" 기록을 삭제할까요?\n삭제 후 복구할 수 없습니다.`)) return;
+      const button = $("deleteRecord");
+      button.disabled = true;
+      $("productStatus").textContent = "삭제 중…";
+      try {
+        const response = await fetch(`/api/admin/benchmarks/${encodeURIComponent(record.id)}`, { method: "DELETE" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "기록을 삭제하지 못했습니다.");
+        records.splice(index, 1);
+        selectedId = records[Math.min(index, records.length - 1)]?.id || "";
+        renderList();
+        renderDetail(records.find((item) => item.id === selectedId));
+      } catch (error) {
+        $("productStatus").textContent = error.message || "기록을 삭제하지 못했습니다.";
+        button.disabled = false;
+      }
+    }
+    function parseCsvRow(line) {
+      const fields = []; let value = ""; let quoted = false;
+      for (let index = 0; index < line.length; index++) {
+        const character = line[index];
+        if (character === '"') {
+          if (quoted && line[index + 1] === '"') { value += '"'; index++; }
+          else quoted = !quoted;
+        } else if (character === "," && !quoted) { fields.push(value.trim()); value = ""; }
+        else value += character;
+      }
+      fields.push(value.trim());
+      return fields;
+    }
+    function parseBenchmarkCsv(text) {
+      const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim());
+      const headerIndex = lines.findIndex((line) => /\bedge\b/i.test(line) && /latency[_ ]?(us|ms)/i.test(line));
+      if (headerIndex >= 0) {
+        const headers = parseCsvRow(lines[headerIndex]).map((header) => header.toLowerCase().replace(/\s+/g, "_"));
+        const column = (names) => names.map((name) => headers.indexOf(name)).find((index) => index >= 0) ?? -1;
+        const edgeIndex = column(["edge", "type"]);
+        const latencyUsIndex = column(["latency_us", "latency_usec", "latency"]);
+        const latencyMsIndex = column(["latency_ms"]);
+        const reportIndex = column(["report", "sample", "index"]);
+        const roundIndex = column(["round"]);
+        const rawIndex = column(["raw_latency_us"]);
+        const correctionIndex = column(["correction_us"]);
+        if (edgeIndex < 0 || (latencyUsIndex < 0 && latencyMsIndex < 0)) throw new Error("edge와 latency_us 또는 latency_ms 열이 필요합니다.");
+        return lines.slice(headerIndex + 1).map((line, index) => {
+          const row = parseCsvRow(line); const edge = String(row[edgeIndex] || "").toLowerCase();
+          const latencyUs = latencyUsIndex >= 0 ? Number(row[latencyUsIndex]) : Number(row[latencyMsIndex]) * 1000;
+          if (!["press", "release"].includes(edge) || !Number.isFinite(latencyUs)) return null;
+          return { edge, report: Number(row[reportIndex]) || index + 1, round: Number(row[roundIndex]) || 0, index: index + 1, latencyUs: Math.round(latencyUs), rawLatencyUs: Number(row[rawIndex]) || 0, correctionUs: Number(row[correctionIndex]) || 0 };
+        }).filter(Boolean);
+      }
+      const paired = lines.map(parseCsvRow).filter((row) => row.length >= 4 && row.slice(0, 4).every((value) => /^\d+$/.test(value)));
+      if (!paired.length) throw new Error("지원하는 CSV 측정 열을 찾지 못했습니다.");
+      return paired.flatMap((row, index) => {
+        const round = Number(row[0]) + 1; const sampleIndex = Number(row[1]) + 1;
+        return [
+          { edge: "press", report: index * 2 + 1, round, index: sampleIndex, latencyUs: Number(row[2]), rawLatencyUs: 0, correctionUs: 0 },
+          { edge: "release", report: index * 2 + 2, round, index: sampleIndex, latencyUs: Number(row[3]), rawLatencyUs: 0, correctionUs: 0 },
+        ];
+      });
+    }
+    async function receiveCsv(file) {
+      if (!file || !/\.csv$/i.test(file.name)) { $("importStatus").textContent = "CSV 파일만 선택할 수 있습니다."; return; }
+      try {
+        importedSamples = parseBenchmarkCsv(await file.text());
+        const press = importedSamples.filter((sample) => sample.edge === "press").length;
+        const release = importedSamples.filter((sample) => sample.edge === "release").length;
+        if (!press || press !== release) throw new Error(`PRESS/RELEASE 샘플 수가 맞지 않습니다: ${press}/${release}`);
+        importedFileName = file.name;
+        $("importForm").hidden = false;
+        $("importStatus").textContent = `${file.name} · ${press}쌍 인식 완료`;
+        $("importProduct").focus();
+      } catch (error) {
+        importedSamples = []; importedFileName = ""; $("importForm").hidden = true;
+        $("importStatus").textContent = error.message || "CSV를 읽지 못했습니다.";
+      }
+    }
+    async function saveImportedCsv(event) {
+      event.preventDefault();
+      if (!importedSamples.length) return;
+      const button = event.submitter;
+      button.disabled = true; $("importStatus").textContent = "DB 저장 중…";
+      try {
+        const payload = {
+          manufacturer: $("importManufacturer").value,
+          product: $("importProduct").value,
+          profileName: $("importProfile").value,
+          measurementDevice: "CSV Import",
+          measurement: { method: "manual-csv-import", version: "1.0", keyCode: 0, elapsedUs: 0, cdcDelays: [] },
+          notes: `수동 업로드: ${importedFileName}`,
+          polling: {},
+          samples: importedSamples,
+        };
+        const response = await fetch("/api/admin/benchmarks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "저장하지 못했습니다.");
+        records.unshift(result.record); selectedId = result.record.id; renderList(); renderDetail(result.record);
+        importedSamples = []; importedFileName = ""; $("importForm").reset(); $("importForm").hidden = true;
+        $("importStatus").textContent = "CSV 측정값을 DB에 저장했습니다.";
+      } catch (error) {
+        $("importStatus").textContent = error.message || "저장하지 못했습니다.";
+      } finally { button.disabled = false; }
+    }
+    $("recordList").addEventListener("click", (event) => { const button = event.target.closest("[data-id]"); if (!button) return; selectedId = button.dataset.id; renderList(); renderDetail(records.find((record) => record.id === selectedId)); });
+    $("detail").addEventListener("click", (event) => { if (event.target.id === "saveProduct") saveProductName(); if (event.target.id === "deleteRecord") deleteSelectedRecord(); });
+    $("detail").addEventListener("keydown", (event) => { if (event.target.id === "productName" && event.key === "Enter") saveProductName(); });
+    $("search").addEventListener("input", renderList);
+    $("dropZone").addEventListener("click", () => $("csvFile").click());
+    $("dropZone").addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); $("csvFile").click(); } });
+    ["dragenter", "dragover"].forEach((type) => $("dropZone").addEventListener(type, (event) => { event.preventDefault(); $("dropZone").classList.add("drag"); }));
+    ["dragleave", "drop"].forEach((type) => $("dropZone").addEventListener(type, (event) => { event.preventDefault(); $("dropZone").classList.remove("drag"); }));
+    $("dropZone").addEventListener("drop", (event) => receiveCsv(event.dataTransfer.files[0]));
+    $("csvFile").addEventListener("change", (event) => receiveCsv(event.target.files[0]));
+    $("importForm").addEventListener("submit", saveImportedCsv);
+    fetch("/api/benchmarks").then((response) => response.json()).then((data) => { records = data.records || []; selectedId = records[0]?.id || ""; renderList(); renderDetail(records[0]); }).catch(() => { $("recordList").innerHTML = '<p class="empty">데이터를 불러오지 못했습니다.</p>'; });
+  </script>
+</body>
+</html>

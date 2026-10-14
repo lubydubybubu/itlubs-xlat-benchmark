@@ -1,0 +1,6 @@
+connect
+r
+loadfile build\release\xlat.elf
+r
+g
+q

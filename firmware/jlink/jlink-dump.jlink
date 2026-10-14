@@ -1,0 +1,3 @@
+connect
+savebin xlat-backup.bin, 0x08000000, 0x00040000
+q

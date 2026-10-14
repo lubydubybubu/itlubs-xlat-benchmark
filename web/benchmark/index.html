@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>iTLUBS / Benchmark</title>
+  <meta name="description" content="XLAT 1.4.0 클릭 응답속도 측정 도구">
+  <style>
+    :root {
+      --bg: #101312;
+      --panel: #171b19;
+      --panel-2: #1d2320;
+      --line: #303833;
+      --text: #f0f4ee;
+      --muted: #8b9790;
+      --lime: #caff38;
+      --orange: #ff7048;
+      --green: #67e59b;
+      --press: var(--orange);
+      --release: var(--lime);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: Inter, Pretendard, "Apple SD Gothic Neo", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { background: var(--bg); }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        linear-gradient(rgba(202, 255, 56, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(202, 255, 56, .035) 1px, transparent 1px),
+        var(--bg);
+      background-size: 44px 44px;
+      font-family: var(--sans);
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+    .shell { width: min(1440px, calc(100% - 40px)); margin: 0 auto; }
+
+    .topbar {
+      height: 72px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand { display: flex; align-items: center; gap: 11px; font: 800 13px/1 var(--mono); letter-spacing: .12em; }
+    .brand-mark { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--lime); color: var(--lime); }
+    .top-meta { display: flex; align-items: center; gap: 18px; color: var(--muted); font: 11px/1 var(--mono); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #6c756f; display: inline-block; margin-right: 7px; }
+    .status-dot.live { background: var(--green); box-shadow: 0 0 0 5px rgba(103, 229, 155, .12); }
+
+    .section-label { color: var(--muted); font: 700 10px/1 var(--mono); letter-spacing: .15em; margin: 0 0 14px; }
+    .grid { display: grid; grid-template-columns: 350px minmax(0, 1fr); gap: 14px; align-items: start; }
+    .card { border: 1px solid var(--line); background: rgba(23, 27, 25, .94); }
+    .card-head { padding: 22px 22px 18px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 15px; align-items: start; }
+    .card-head h2 { margin: 0; font-size: 20px; letter-spacing: -.05em; }
+    .chip { padding: 7px 8px; color: var(--lime); border: 1px solid rgba(202, 255, 56, .35); font: 10px/1 var(--mono); white-space: nowrap; }
+    .controls { padding-bottom: 22px; }
+    .control-body { padding: 20px 22px 0; }
+    .device-box { padding: 16px; border: 1px solid var(--line); background: var(--panel-2); display: grid; grid-template-columns: 38px 1fr; gap: 12px; align-items: center; }
+    .device-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; background: var(--lime); color: var(--bg); font: 800 10px/1 var(--mono); }
+    .device-box strong, .device-box span { display: block; }
+    .device-box strong { font-size: 13px; }
+    .device-box span { color: var(--muted); margin-top: 5px; font: 10px/1.3 var(--mono); word-break: break-all; }
+    .field { margin-top: 18px; }
+    .field-label { display: block; color: var(--muted); font: 10px/1 var(--mono); margin-bottom: 8px; }
+    input { width: 100%; border: 1px solid var(--line); background: #101412; color: var(--text); padding: 12px; outline: none; }
+    input:focus { border-color: var(--lime); box-shadow: 3px 3px 0 rgba(202, 255, 56, .25); }
+    select { width: 100%; border: 1px solid var(--line); background: #101412; color: var(--text); padding: 10px; outline: none; }
+    select:focus { border-color: var(--lime); box-shadow: 3px 3px 0 rgba(202, 255, 56, .25); }
+    .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 20px; }
+    .button-row button, .button-line button { min-height: 44px; border: 1px solid var(--line); background: transparent; color: var(--text); font-weight: 800; }
+    .button-row .primary { background: var(--lime); color: var(--bg); border-color: var(--lime); }
+    .button-row .primary.disconnect { background: var(--orange); border-color: var(--orange); }
+    .button-row button:hover:not(:disabled), .button-line button:hover:not(:disabled) { border-color: var(--lime); }
+    .status-box { margin-top: 10px; padding: 13px 14px; display: flex; gap: 10px; background: #121714; border: 1px solid var(--line); }
+    .status-box strong, .status-box span { display: block; }
+    .status-box strong { font-size: 12px; }
+    .status-box span { color: var(--muted); margin-top: 5px; font: 10px/1.4 var(--mono); }
+    .status-pip { width: 8px; height: 8px; flex: none; margin-top: 3px; border-radius: 50%; background: #66716a; }
+    .status-pip.active { background: var(--orange); box-shadow: 0 0 0 5px rgba(255, 112, 72, .12); }
+    .button-line { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .button-line button { min-height: 38px; font-size: 12px; }
+    .button-line .trigger { background: var(--lime); border-color: var(--lime); color: var(--bg); }
+    .button-line .trigger.stop { background: var(--orange); border-color: var(--orange); color: var(--text); }
+    .demo-link { display: block; margin: 10px 0 0 auto; border: 0; background: none; color: var(--muted); padding: 0; font: 10px/1 var(--mono); text-decoration: underline; }
+    .demo-link:hover { color: var(--lime); }
+    .hint { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.65; }
+    .hint strong { color: var(--text); }
+    .remote-controls { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .remote-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .remote-field { display: block; }
+    .remote-field span { display: block; color: var(--muted); font: 10px/1 var(--mono); margin-bottom: 7px; }
+    .remote-field select { font-size: 11px; padding: 9px 8px; }
+    .remote-reboot { width: 100%; min-height: 38px; margin-top: 10px; border: 1px solid var(--orange); background: transparent; color: var(--orange); font-size: 12px; font-weight: 800; }
+    .remote-reboot:hover:not(:disabled) { background: var(--orange); color: var(--bg); }
+    .device-state { margin-top: 10px; padding: 10px; border: 1px solid var(--line); background: #121714; color: var(--lime); font: 10px/1.5 var(--mono); overflow-wrap: anywhere; }
+    .neon-panel { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .neon-head { display: flex; justify-content: space-between; align-items: end; gap: 12px; }
+    .neon-head strong { font-size: 14px; }
+    .neon-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px; }
+    .neon-tabs button { min-height: 32px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 11px; font-weight: 800; }
+    .neon-tabs button.active { border-color: var(--lime); background: rgba(202,255,56,.12); color: var(--lime); }
+    .neon-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .neon-field { display: block; color: var(--muted); font: 10px/1 var(--mono); }
+    .neon-field input, .neon-field select { margin-top: 7px; padding: 9px 8px; font-size: 11px; }
+    .neon-toggle { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font: 11px/1.4 var(--mono); }
+    .neon-toggle input { width: auto; accent-color: var(--lime); }
+    .neon-start { width: 100%; min-height: 40px; margin-top: 12px; border: 1px solid var(--lime); background: var(--lime); color: var(--bg); font-size: 12px; font-weight: 800; }
+    .neon-start.stop { border-color: var(--orange); background: var(--orange); color: var(--text); }
+    .neon-status { display: block; margin-top: 9px; color: var(--lime); font: 10px/1.5 var(--mono); white-space: pre-wrap; }
+    .neon-results .stats-head strong::before { background: #c26cff; }
+    .neon-results .stat-metric strong { color: #d19bff; }
+
+    .main-stack { min-width: 0; }
+    .results-card { padding: 22px; }
+    .results-title { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 24px; }
+    .results-title h2 { margin: 5px 0 0; font-size: 22px; }
+    .results-title span { color: var(--muted); font: 10px/1 var(--mono); }
+    .results-title .connected-device { display: block; margin-top: 8px; color: var(--lime); }
+    .stats-panel { margin-top: 20px; }
+    .stats-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .stats-head strong { font: 800 12px/1 var(--mono); letter-spacing: .04em; }
+    .stats-head span { color: var(--muted); font: 10px/1 var(--mono); }
+    .stats-head strong::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--orange); }
+    .stats-panel.release .stats-head strong::before { background: var(--lime); }
+    .stats-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+    .polling-panel .stats-grid { grid-template-columns: repeat(4, 1fr); }
+    .stat-metric { min-width: 0; padding: 14px 10px; border: 1px solid var(--line); text-align: center; }
+    .stat-metric span { display: block; color: var(--muted); font: 700 10px/1 var(--mono); }
+    .stat-metric strong { display: inline-block; margin-top: 10px; color: var(--orange); font: 500 clamp(16px, 1.5vw, 22px)/1 var(--mono); letter-spacing: -.04em; }
+    .stats-panel.release .stat-metric strong { color: var(--lime); }
+    .stats-panel.overall .stats-head strong::before { background: #78a8ff; }
+    .stats-panel.overall .stat-metric strong { color: #9bbcff; }
+    .stat-metric small { color: var(--muted); font: 10px/1 var(--mono); }
+    .polling-panel .stats-head strong::before { background: #78a8ff; }
+    .polling-panel .stat-metric strong { color: #9bbcff; }
+
+    .chart-card { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+    .chart-top { display: flex; justify-content: space-between; gap: 14px; align-items: end; }
+    .chart-top strong { display: block; margin-top: 6px; font-size: 16px; }
+    .chart-top span { color: var(--muted); font: 10px/1 var(--mono); }
+    .chart-meta { display: flex; align-items: center; gap: 12px; }
+    .chart-legend { display: inline-flex; align-items: center; gap: 5px; }
+    .chart-legend::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--press); }
+    .chart-legend.release::before { background: var(--release); }
+    .chart { position: relative; height: 290px; margin-top: 22px; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); overflow: hidden; background: var(--panel); }
+    .chart-line { position: absolute; left: 0; right: 0; border-top: 1px solid var(--line); }
+    .chart-line span { position: absolute; top: 5px; left: 7px; color: #66716a; font: 9px/1 var(--mono); }
+    .chart-line.one { top: 0; } .chart-line.two { top: 50%; } .chart-line.three { bottom: 0; }
+    .point { position: absolute; width: 6px; height: 6px; border-radius: 50%; transform: translate(-50%, 50%); background: var(--press); box-shadow: none; }
+    .point.release { background: var(--release); box-shadow: none; }
+    .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+
+    .table-card { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+    .table-head { display: flex; justify-content: space-between; gap: 14px; align-items: end; }
+    .table-head strong { font-size: 16px; }
+    .table-head span { color: var(--muted); font: 10px/1 var(--mono); }
+    .table-wrap { margin-top: 15px; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { color: var(--muted); font: 10px/1 var(--mono); text-align: left; }
+    th, td { padding: 12px 9px; border-top: 1px solid var(--line); white-space: nowrap; }
+    th:not(:first-child), td:not(:first-child) { text-align: right; }
+    td strong { font-family: var(--mono); font-weight: 500; }
+    .up { color: var(--orange); } .down { color: var(--green); }
+    .edge-badge { display: inline-block; min-width: 52px; margin-right: 8px; padding: 4px 6px; border: 1px solid currentColor; font: 800 9px/1 var(--mono); text-align: center; }
+    dialog { width: min(680px, calc(100% - 28px)); padding: 0; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+    dialog::backdrop { background: rgba(0, 0, 0, .76); }
+    .save-form { padding: 22px; }
+    .save-form h2 { margin: 5px 0 6px; }
+    .save-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+    .save-grid label { color: var(--muted); font: 10px/1 var(--mono); }
+    .save-grid input, .save-grid select, .save-grid textarea { width: 100%; margin-top: 7px; }
+    .save-grid .wide { grid-column: 1 / -1; }
+    .save-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+    .save-actions button { min-height: 40px; padding: 0 18px; border: 1px solid var(--text); border-radius: 999px; background: transparent; color: var(--text); font: 700 11px/1 var(--sans); white-space: nowrap; }
+    .save-actions .primary { background: var(--text); color: var(--bg); }
+    .save-actions button:hover { border-color: var(--orange); }
+    .empty-row { padding: 30px 9px; text-align: center !important; color: var(--muted); }
+
+    .raw { display: none; }
+    .raw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+    .raw-item { padding: 14px; border: 1px solid var(--line); background: #121714; }
+    .raw-item span { display: block; color: var(--muted); font: 10px/1 var(--mono); }
+    .raw-item code { display: block; margin-top: 9px; color: var(--lime); font: 12px/1.5 var(--mono); overflow-wrap: anywhere; }
+
+    footer { display: flex; justify-content: space-between; gap: 15px; padding: 26px 0 36px; color: var(--muted); font: 10px/1 var(--mono); }
+    .toast { position: fixed; right: 20px; bottom: 20px; max-width: 360px; padding: 14px 16px; border: 1px solid var(--lime); background: #101512; color: var(--text); font-size: 12px; opacity: 0; transform: translateY(10px); pointer-events: none; transition: .2s ease; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    @media (max-width: 1050px) { .grid { grid-template-columns: 1fr; } .controls { position: static; } }
+    @media (max-width: 820px) { .stats-grid, .polling-panel .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .shell { width: min(100% - 24px, 1440px); } .top-meta span:last-child { display: none; } .chart-top { align-items: start; flex-direction: column; } .raw-grid, .save-grid { grid-template-columns: 1fr; } .save-grid .wide { grid-column: auto; } .save-actions { display: grid; grid-template-columns: 1fr 1fr; } .save-actions button { width: 100%; padding-inline: 10px; } footer { flex-direction: column; } }
+  </style>
+  <link rel="stylesheet" href="/benchmark-theme.css?v=20260821-5">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/"><span>LUBY<b>.</b></span><small>BENCHMARK</small></a>
+      <div class="top-meta"><a href="/database/">DATABASE</a><span><i class="status-dot" id="topDot"></i><span id="topStatus">DEVICE OFFLINE</span></span><span>XLAT v1.4.0</span></div>
+    </header>
+
+    <section class="grid">
+      <aside class="card controls">
+        <div class="card-head"><div><p class="section-label">CONNECTION</p><h2>XLAT 연결</h2></div><span class="chip">1M / 8N1</span></div>
+        <div class="control-body">
+          <div class="device-box"><div class="device-icon">USB</div><div><strong id="deviceName">장치를 선택하세요</strong><span id="deviceId">Web Serial 대기 중</span></div></div>
+          <div class="button-row"><button class="primary" id="connectBtn">포트 연결</button><button id="disconnectBtn" disabled>연결 해제</button></div>
+          <div class="status-box"><span class="status-pip" id="statusPip"></span><div><strong id="statusTitle">연결 전</strong><span id="statusDetail">Chrome 또는 Edge에서 포트를 선택하세요.</span></div></div>
+          <div class="button-line"><button class="trigger" id="triggerBtn" disabled>웹에서 측정 시작</button><button id="clearBtn">데이터 초기화</button></div>
+          <button class="demo-link" id="demoBtn">데모 데이터 표시</button>
+          <div class="remote-controls">
+            <p class="section-label">DEVICE CONTROL</p>
+            <div class="remote-grid">
+              <label class="remote-field"><span>DETECTION EDGE</span><select id="edgeSelect" disabled><option value="0">Falling</option><option value="1">Rising</option><option value="2">Both · press + release</option></select></label>
+              <label class="remote-field"><span>DEBOUNCE</span><select id="debounceSelect" disabled><option value="20">20 ms</option><option value="50">50 ms · default</option><option value="100">100 ms</option><option value="200">200 ms</option><option value="500">500 ms</option><option value="1000">1000 ms</option></select></label>
+              <label class="remote-field"><span>TRIGGER LEVEL</span><select id="levelSelect" disabled><option value="0">Pull Low</option><option value="1">Drive High</option></select></label>
+              <label class="remote-field"><span>DETECTION MODE</span><select id="modeSelect" disabled><option value="CLICK">Click</option><option value="MOTION">Motion</option></select></label>
+            </div>
+            <button class="remote-reboot" id="rebootBtn" disabled>XLAT 재부팅</button>
+            <code class="device-state" id="deviceState">STATUS 대기 중</code>
+          </div>
+          <section class="neon-panel" aria-labelledby="neonTitle">
+            <div class="neon-head"><div><p class="section-label">NEON TESTER</p><strong id="neonTitle">자동 반복 테스트</strong></div><span class="chip">XLAT MODE</span></div>
+            <div class="neon-tabs" role="tablist" aria-label="스위치 타입"><button type="button" class="active" id="neonWired" role="tab" aria-selected="true">기계식 / 유선</button><button type="button" id="neonHe" role="tab" aria-selected="false">HE</button></div>
+            <div class="neon-grid">
+              <label class="neon-field">총 테스트 회수<input id="neonRounds" type="number" min="1" max="20" value="4"></label>
+              <label class="neon-field">라운드별 테스트 회수<input id="neonTimes" type="number" min="1" max="500" value="100"></label>
+              <label class="neon-field">라운드 간격 (초)<input id="neonInterval" type="number" min="0" max="60" step="0.1" value="2"></label>
+              <label class="neon-field">스캔 레이트<select id="neonScan"><option value="0">자동</option><option value="125">125 Hz</option><option value="500">500 Hz</option><option value="1000">1 kHz</option><option value="2000">2 kHz</option><option value="4000">4 kHz</option><option value="8000">8 kHz</option></select></label>
+            </div>
+            <label class="neon-toggle"><input id="neonTrigger" type="checkbox"> 키 누름 트리거 사용</label>
+            <button class="neon-start" id="neonStart" type="button" disabled>NEON 테스트 시작</button>
+            <code class="neon-status" id="neonStatus">XLAT 연결 후 실행 가능</code>
+          </section>
+        </div>
+      </aside>
+
+      <div class="main-stack card results-card">
+        <div class="results-title"><div><p class="section-label">BENCHMARK RESULT</p><h2>벤치마크 결과</h2><span class="connected-device" id="connectedDevice">연결 기기 대기 중</span></div><span id="sampleLabel">0 samples</span></div>
+        <div class="stats-panel press">
+          <div class="stats-head"><strong>PRESS · 누르는 시간</strong><span id="pressStatus">0 samples</span></div>
+          <div class="stats-grid">
+            <div class="stat-metric"><span>AVERAGE</span><strong id="pressAverage">—</strong><small>ms</small></div>
+            <div class="stat-metric"><span>STDEV</span><strong id="pressStdev">—</strong><small>ms</small></div>
+            <div class="stat-metric" title="1,000,000 ÷ (평균 µs + 표준편차 µs)"><span>환산 POLLING</span><strong id="pressEffectiveHz">—</strong><small>Hz</small></div>
+            <div class="stat-metric"><span>MEDIAN</span><strong id="pressMedian">—</strong><small>ms</small></div>
+            <div class="stat-metric"><span>MAD</span><strong id="pressMad">—</strong><small>ms</small></div>
+            <div class="stat-metric" title="1,000,000 ÷ (중앙값 µs + MAD µs)"><span>MAD POLLING</span><strong id="pressEffectiveMadHz">—</strong><small>Hz</small></div>
+          </div>
+        </div>
+
+        <div class="stats-panel release">
+          <div class="stats-head"><strong>RELEASE · 떼는 시간</strong><span id="releaseStatus">0 samples</span></div>
+          <div class="stats-grid">
+            <div class="stat-metric"><span>AVERAGE</span><strong id="releaseAverage">—</strong><small>ms</small></div>
+            <div class="stat-metric"><span>STDEV</span><strong id="releaseStdev">—</strong><small>ms</small></div>
+            <div class="stat-metric" title="1,000,000 ÷ (평균 µs + 표준편차 µs)"><span>환산 POLLING</span><strong id="releaseEffectiveHz">—</strong><small>Hz</small></div>
+            <div class="stat-metric"><span>MEDIAN</span><strong id="releaseMedian">—</strong><small>ms</small></div>
+            <div class="stat-metric"><span>MAD</span><strong id="releaseMad">—</strong><small>ms</small></div>
+            <div class="stat-metric" title="1,000,000 ÷ (중앙값 µs + MAD µs)"><span>MAD POLLING</span><strong id="releaseEffectiveMadHz">—</strong><small>Hz</small></div>
+          </div>
+        </div>
+
+        <div class="stats-panel overall">
+          <div class="stats-head"><strong>종합 · PRESS / RELEASE 평균</strong><span id="overallStatus">0 pairs</span></div>
+          <div class="stats-grid">
+            <div class="stat-metric"><span>평균 응답속도</span><strong id="overallAverage">—</strong><small>ms</small></div>
+            <div class="stat-metric"><span>평균 표준편차</span><strong id="overallStdev">—</strong><small>ms</small></div>
+            <div class="stat-metric" title="1,000,000 ÷ (평균 응답속도 µs + 평균 표준편차 µs)"><span>종합 POLLING</span><strong id="overallEffectiveHz">—</strong><small>Hz</small></div>
+            <div class="stat-metric"><span>평균 중앙값</span><strong id="overallMedian">—</strong><small>ms</small></div>
+            <div class="stat-metric"><span>평균 MAD</span><strong id="overallMad">—</strong><small>ms</small></div>
+            <div class="stat-metric"><span>MAD POLLING</span><strong id="overallEffectiveMadHz">—</strong><small>Hz</small></div>
+          </div>
+        </div>
+
+        <div class="stats-panel polling-panel">
+          <div class="stats-head"><strong>USB POLLING · HID 엔드포인트 기준</strong><span id="pollingStatus">대기 중</span></div>
+          <div class="stats-grid">
+            <div class="stat-metric"><span>POLLING RATE</span><strong id="pollingRate">—</strong><small>Hz</small></div>
+            <div class="stat-metric"><span>USB INTERVAL</span><strong id="pollingInterval">—</strong><small>µs</small></div>
+            <div class="stat-metric"><span>MEASURED RATE</span><strong id="pollingMeasured">—</strong><small>Hz</small></div>
+            <div class="stat-metric"><span>REPORT SAMPLES</span><strong id="pollingSamples">—</strong><small>count</small></div>
+          </div>
+        </div>
+
+        <div class="stats-panel neon-results">
+          <div class="stats-head"><strong>NEON TEST RESULT</strong><span id="neonResultStatus">대기 중</span></div>
+          <div class="stats-grid">
+            <div class="stat-metric"><span>KEY DOWN</span><strong id="neonKeyDown">—</strong><small>ms</small></div>
+            <div class="stat-metric"><span>KEY UP</span><strong id="neonKeyUp">—</strong><small>ms</small></div>
+            <div class="stat-metric"><span>SCAN RATE</span><strong id="neonScanRate">—</strong><small>Hz</small></div>
+            <div class="stat-metric"><span>TOTAL TESTS</span><strong id="neonTotal">—</strong><small>pairs</small></div>
+            <div class="stat-metric"><span>ELAPSED</span><strong id="neonElapsed">—</strong><small>s</small></div>
+            <div class="stat-metric"><span>MODE</span><strong id="neonMode">WIRED</strong><small>XLAT</small></div>
+          </div>
+        </div>
+
+        <section class="chart-card">
+          <div class="chart-top"><div><p class="section-label">DATA VISUALIZATION</p><strong>Press / Release 클릭 지연 분포</strong></div><div class="chart-meta"><span class="chart-legend">PRESS</span><span class="chart-legend release">RELEASE</span></div></div>
+          <div class="chart" id="chart"><div class="chart-line one"><span id="chartTop">3.0 ms</span></div><div class="chart-line two"><span>1.5 ms</span></div><div class="chart-line three"><span>0 ms</span></div><div class="empty" id="chartEmpty">XLAT 측정값을 기다리고 있습니다.</div></div>
+        </section>
+
+        <section class="table-card">
+          <div class="table-head"><div><strong>최근 샘플</strong><span id="tableMeta">실시간 수신값</span></div><div class="result-actions"><button id="exportBtn">CSV 저장</button><button class="primary" id="saveDbBtn">DB 저장</button><a href="/database/">DATABASE →</a></div></div>
+          <div class="table-wrap"><table><thead><tr><th>샘플 #</th><th>PRESS</th><th>RELEASE</th></tr></thead><tbody id="sampleRows"><tr><td class="empty-row" colspan="3">아직 측정 데이터가 없습니다.</td></tr></tbody></table></div>
+        </section>
+
+        <section class="card raw">
+          <p class="section-label">SERIAL DIAGNOSTICS</p>
+          <div class="raw-grid"><div class="raw-item"><span>LAST RAW LINE</span><code id="rawLine">—</code></div><div class="raw-item"><span>RECEIVE COUNTERS</span><code id="receiveCounters">0 bytes / 0 lines</code></div></div>
+          <p class="hint">폴링레이트는 클릭 지연에서 역산하지 않습니다. USB 엔드포인트의 <code>bInterval</code>로 정확한 설정값을 계산하며, 연속 HID 리포트 표본이 충분할 때는 XLAT 1MHz 타이머로 측정한 값도 함께 표시합니다.</p>
+        </section>
+      </div>
+    </section>
+
+    <footer><span>ITLUBS / LOCAL-FIRST BENCHMARK</span><span>측정값은 브라우저 밖으로 전송되지 않습니다.</span></footer>
+  </div>
+  <dialog id="saveDialog">
+    <form class="save-form" id="saveForm">
+      <p class="section-label">SAVE BENCHMARK</p>
+      <h2>측정값 DB 저장</h2>
+      <p class="hint" style="margin-top:0;padding-top:0;border:0">관리자 로그인 상태에서만 저장됩니다. 실제 USB 폴링과 환산 성능 Hz는 분리 보관됩니다.</p>
+      <div class="save-grid">
+        <label>제조사<input id="saveManufacturer" maxlength="100" required></label>
+        <label>제품명<input id="saveProduct" maxlength="160" required></label>
+        <label>연결 방식<select id="saveConnection"><option>무선</option><option>유선</option></select></label>
+        <label>마우스 펌웨어<input id="saveMouseFirmware" maxlength="60" placeholder="예: 1.09"></label>
+        <label>마우스 폴링 설정<input id="savePollingSetting" maxlength="40" placeholder="예: 8000 Hz"></label>
+        <label>마우스 디바운스<input id="saveDebounceSetting" maxlength="60" placeholder="예: 0 ms"></label>
+        <label>모션싱크<input id="saveMotionSync" maxlength="60" placeholder="예: OFF"></label>
+        <label>프로필명<input id="saveProfileName" maxlength="100" placeholder="예: 8K · GX Speed"></label>
+        <label class="wide">메모<textarea id="saveNotes" rows="3" maxlength="1000"></textarea></label>
+      </div>
+      <p id="saveStatus" class="hint"></p>
+      <div class="save-actions"><button type="button" id="saveCancel">취소</button><button type="submit" class="primary">관리자 DB에 저장</button></div>
+    </form>
+  </dialog>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = { port: null, reader: null, statusTimer: null, protocol: "xlat", buffer: "", binaryBuffer: new Uint8Array(), rabbitAckWaiters: [], rabbitCdcDelayUs: 0, samples: [], quality: null, measurement: null, bytes: 0, lines: 0, collecting: true, triggerRunning: false, device: { manufacturer: "", product: "", vidpid: "" }, polling: { measuredHz: 0, intervalUs: 0, configuredHz: 0, samples: 0 }, neon: { mode: "wired", running: false, rounds: 4, times: 100, interval: 2, scan: 0, trigger: false, round: 0, startedAt: 0 } };
+    const xlatSerialOptions = { baudRate: 1000000, dataBits: 8, stopBits: 1, parity: "none", flowControl: "none" };
+    const rabbitSerialOptions = { ...xlatSerialOptions, baudRate: 921600 };
+    const rabbitBridgeUrl = "http://127.0.0.1:53941";
+    const demoValues = [1.84, 2.11, 1.97, 2.24, 1.89, 2.05, 2.17, 1.91, 2.32, 2.02, 1.95, 2.08, 1.86, 2.19, 2.01, 1.94, 2.26, 1.99, 2.13, 1.88];
+
+    function showToast(message) { $("toast").textContent = message; $("toast").classList.add("show"); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => $("toast").classList.remove("show"), 3200); }
+    function setStatus(title, detail, kind = "") { $("statusTitle").textContent = title; $("statusDetail").textContent = detail; $("statusPip").className = `status-pip ${kind}`; $("topStatus").textContent = kind === "active" ? "DEVICE ONLINE" : "DEVICE OFFLINE"; $("topDot").className = `status-dot ${kind === "active" ? "live" : ""}`; }
+    function setTriggerButton(running) { state.triggerRunning = running; const button = $("triggerBtn"); button.disabled = !state.port; button.classList.toggle("stop", running); button.textContent = running ? "웹 측정 중지" : "웹에서 측정 시작"; }
+    function setRemoteControlsEnabled(enabled) { ["edgeSelect", "debounceSelect", "levelSelect", "modeSelect", "rebootBtn"].forEach((id) => $(id).disabled = !enabled); if (!enabled) $("deviceState").textContent = "STATUS 대기 중"; }
+    function setNeonEnabled(enabled) { $("neonStart").disabled = !enabled; if (!enabled && state.neon.running) state.neon.running = false; $("neonStatus").textContent = enabled ? `${state.protocol === "rabbit" ? "TAB Rabbit" : "XLAT"} 연결됨 · 설정 후 테스트를 시작하세요.` : "장치 연결 후 실행 가능"; }
+    async function sendCommand(command) { if (!state.port?.writable) throw new Error("XLAT VCOM 포트가 연결되지 않았습니다."); const writer = state.port.writable.getWriter(); try { for (const byte of new TextEncoder().encode(`${command}\r\n`)) { await writer.write(Uint8Array.of(byte)); await new Promise((resolve) => setTimeout(resolve, 3)); } } finally { writer.releaseLock(); } }
+    async function sendRabbitPacket(command, value = 0) {
+      if (!state.port?.writable) throw new Error("TAB Rabbit 포트가 연결되지 않았습니다.");
+      const packet = new Uint8Array(64);
+      packet[0] = command; packet[1] = value;
+      let waiter;
+      const ack = new Promise((resolve, reject) => {
+        waiter = { command, resolve, reject };
+        waiter.timer = setTimeout(() => { state.rabbitAckWaiters = state.rabbitAckWaiters.filter((item) => item !== waiter); reject(new Error(`TAB Rabbit 응답 시간 초과 (0x${command.toString(16).toUpperCase()})`)); }, 500);
+        state.rabbitAckWaiters.push(waiter);
+      });
+      const writer = state.port.writable.getWriter();
+      try { await writer.write(packet); await ack; }
+      catch (error) { clearTimeout(waiter.timer); state.rabbitAckWaiters = state.rabbitAckWaiters.filter((item) => item !== waiter); throw error; }
+      finally { writer.releaseLock(); }
+    }
+    function sendRabbitEdge(down) {
+      return state.neon.mode === "he" ? sendRabbitPacket(0xB7, down ? 0x1F : 0x00) : sendRabbitPacket(down ? 0xB2 : 0xB3);
+    }
+    async function toggleTrigger() { const command = state.triggerRunning ? "STOP" : "START"; try { await sendCommand(command); setTriggerButton(command === "START"); setStatus(command === "START" ? "웹 트리거 실행 중" : "연결됨 · 수신 중", command === "START" ? "XLAT에 START 명령을 보냈습니다." : "웹 트리거를 중지했습니다.", "active"); showToast(`${command} 명령을 전송했습니다.`); } catch (error) { showToast(error?.message || "VCOM 명령 전송에 실패했습니다."); } }
+    async function applySetting(command, value) { try { await sendCommand(`${command} ${value}`); await sendCommand("STATUS"); showToast(`${command} 설정을 적용했습니다.`); } catch (error) { showToast(error?.message || "설정 전송에 실패했습니다."); } }
+    function applyStateLine(line) { const data = Object.fromEntries(line.trim().split(";").slice(1).map((field) => { const split = field.indexOf("="); return split < 0 ? [field, ""] : [field.slice(0, split), field.slice(split + 1)]; })); if (data.trigger) setTriggerButton(data.trigger === "running"); if (data.edge) $("edgeSelect").value = data.edge === "both" ? "2" : (data.edge === "rising" ? "1" : "0"); if (data.debounce_ms) $("debounceSelect").value = data.debounce_ms; if (data.level) $("levelSelect").value = data.level === "high" ? "1" : "0"; if (data.mode) $("modeSelect").value = data.mode.toUpperCase(); state.device = { manufacturer: data.manufacturer || "", product: data.product || "", vidpid: data.vidpid || "" }; if (data.product) { $("deviceName").textContent = data.product; $("connectedDevice").textContent = `${data.manufacturer ? `${data.manufacturer} · ` : ""}${data.product}${data.vidpid ? ` · ${data.vidpid}` : ""}`; $("deviceId").textContent = [data.manufacturer, data.vidpid].filter(Boolean).join(" · "); } else { $("deviceName").textContent = "XLAT에 연결된 기기 없음"; $("deviceId").textContent = "USB Host 대기 중"; $("connectedDevice").textContent = "XLAT에 연결된 기기 없음"; } $("deviceState").textContent = `TRIGGER ${data.trigger || "?"} · EDGE ${data.edge || "?"} · DEBOUNCE ${data.debounce_ms || "?"} ms\nLEVEL ${data.level || "?"} · MODE ${data.mode || "?"}\nOFFSET click ${data.click_offset ?? "?"} · x ${data.x_offset ?? "?"} · y ${data.y_offset ?? "?"}`; }
+    async function rebootDevice() { try { await sendCommand("REBOOT"); setTriggerButton(false); showToast("XLAT 재부팅 명령을 보냈습니다."); setTimeout(() => disconnect(), 350); } catch (error) { showToast(error?.message || "재부팅 명령 전송에 실패했습니다."); } }
+    function neonPairCount() { return Math.min(state.samples.filter((sample) => sample.edge === "press").length, state.samples.filter((sample) => sample.edge === "release").length); }
+    function neonSetMode(mode) { state.neon.mode = mode; ["neonWired", "neonHe"].forEach((id) => { const active = id === (mode === "he" ? "neonHe" : "neonWired"); $(id).classList.toggle("active", active); $(id).setAttribute("aria-selected", active ? "true" : "false"); }); $("neonMode").textContent = mode === "he" ? "HE" : "WIRED"; }
+    function neonReadNumber(id, min, max, fallback) { const value = Number($(id).value); return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback; }
+    function neonRender() {
+      const press = edgeStats("press"); const release = edgeStats("release");
+      $("neonKeyDown").textContent = press ? formatMs(press.average) : "—";
+      $("neonKeyUp").textContent = release ? formatMs(release.average) : "—";
+      $("neonScanRate").textContent = state.polling.configuredHz || state.polling.measuredHz || "—";
+      $("neonTotal").textContent = neonPairCount() || "—";
+      $("neonElapsed").textContent = state.neon.startedAt ? ((performance.now() - state.neon.startedAt) / 1000).toFixed(1) : "—";
+      $("neonResultStatus").textContent = state.neon.running ? `ROUND ${state.neon.round}/${state.neon.rounds}` : (neonPairCount() ? `${neonPairCount()} pairs` : "대기 중");
+      $("neonMode").textContent = state.neon.mode === "he" ? "HE" : "WIRED";
+    }
+    async function neonWaitForPairs(target, timeoutMs) {
+      const deadline = performance.now() + timeoutMs;
+      while (state.neon.running && performance.now() < deadline) { if (neonPairCount() >= target) return true; await new Promise((resolve) => setTimeout(resolve, 80)); }
+      return neonPairCount() >= target;
+    }
+    function waitForKeyboardEdge(type, timeoutMs = 1500) {
+      return new Promise((resolve, reject) => {
+        const cleanup = () => { clearTimeout(timer); window.removeEventListener(type, handler, true); };
+        const handler = (event) => {
+          if (type === "keydown" && event.repeat) return;
+          event.preventDefault(); event.stopImmediatePropagation(); cleanup();
+          resolve({ at: Number.isFinite(event.timeStamp) ? event.timeStamp : performance.now(), code: event.code || event.key || "Unknown" });
+        };
+        const timer = setTimeout(() => { cleanup(); reject(new Error(`${type === "keydown" ? "누르기" : "떼기"} 입력을 감지하지 못했습니다.`)); }, timeoutMs);
+        window.addEventListener(type, handler, true);
+      });
+    }
+    async function measureRabbitEdge(down) {
+      const eventPromise = waitForKeyboardEdge(down ? "keydown" : "keyup");
+      const startedAt = performance.now();
+      try {
+        const [, event] = await Promise.all([sendRabbitEdge(down), eventPromise]);
+        let latencyUs = Math.max(0, Math.round((event.at - startedAt) * 1000) - state.rabbitCdcDelayUs);
+        const fixedOffset = state.neon.mode === "he" ? 400 : 100;
+        const offsetThreshold = state.neon.mode === "he" ? 400 : 200;
+        if (latencyUs > offsetThreshold) latencyUs -= fixedOffset;
+        return { edge: down ? "press" : "release", report: state.samples.length + 1, latencyUs, deviceAverageUs: 0, deviceStdDevUs: 0, key: event.code };
+      } catch (error) { eventPromise.catch(() => {}); throw error; }
+    }
+    async function measureRabbitCdcDelay() {
+      const values = [];
+      for (let index = 0; index < 10; index++) {
+        const startedAt = performance.now();
+        await sendRabbitPacket(0xB6, 0x01);
+        values.push(Math.round((performance.now() - startedAt) * 1000));
+      }
+      state.rabbitCdcDelayUs = Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+      return state.rabbitCdcDelayUs;
+    }
+    async function runRabbitTest() {
+      for (let round = 1; round <= state.neon.rounds && state.neon.running; round++) {
+        state.neon.round = round; neonRender();
+        const cdcDelay = await measureRabbitCdcDelay();
+        $("neonStatus").textContent = `라운드 ${round}/${state.neon.rounds} · CDC ${cdcDelay}µs · ${state.neon.times}회 측정 중`;
+        for (let test = -10; test < state.neon.times && state.neon.running; test++) {
+          const press = await measureRabbitEdge(true);
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          const release = await measureRabbitEdge(false);
+          if (test >= 0) { addSample(press); addSample(release); }
+          await new Promise((resolve) => setTimeout(resolve, 80));
+        }
+        if (round < state.neon.rounds && state.neon.running) await new Promise((resolve) => setTimeout(resolve, state.neon.interval * 1000));
+      }
+    }
+    function assessNativeQuality(result) {
+      const expected = state.neon.rounds * state.neon.times;
+      const press = result.samples.filter((sample) => sample.edge === "press");
+      const release = result.samples.filter((sample) => sample.edge === "release");
+      const values = result.samples.map((sample) => sample.latencyUs);
+      const reasons = [];
+      if (press.length !== expected || release.length !== expected) reasons.push(`샘플 누락 ${press.length}/${release.length}/${expected}`);
+      const implausible = result.samples.filter((sample) => sample.rawLatencyUs <= 0 || sample.rawLatencyUs > 10000 || sample.latencyUs < 0).length;
+      if (implausible) reasons.push(`원시값 오류 ${implausible}개`);
+      const nearZero = values.filter((value) => value < 20).length;
+      const cdcRange = result.cdcDelays.length ? Math.max(...result.cdcDelays) - Math.min(...result.cdcDelays) : Infinity;
+      if (cdcRange > 200) reasons.push(`CDC 편차 ${cdcRange}µs`);
+      for (const [name, samples] of [["PRESS", press], ["RELEASE", release]]) {
+        const rawStats = computeStats(samples.map((sample) => sample.rawLatencyUs));
+        if (rawStats && rawStats.stdev > Math.max(500, rawStats.average)) reasons.push(`${name} 원시 분산 과다`);
+        const roundAverages = Array.from({ length: state.neon.rounds }, (_, index) => {
+          const round = samples.filter((sample) => sample.round === index + 1);
+          return round.length ? round.reduce((sum, sample) => sum + sample.rawLatencyUs, 0) / round.length : 0;
+        });
+        const roundSpread = Math.max(...roundAverages) - Math.min(...roundAverages);
+        const center = roundAverages.reduce((sum, value) => sum + value, 0) / roundAverages.length;
+        if (roundSpread > Math.max(150, center * .25)) reasons.push(`${name} 라운드 편차 ${Math.round(roundSpread)}µs`);
+      }
+      return { passed: reasons.length === 0, reasons, expectedPairs: expected, actualPairs: Math.min(press.length, release.length), implausible, nearZero, cdcRange };
+    }
+    async function runNativeRabbitTest() {
+      const query = new URLSearchParams({ port: "COM5", mode: state.neon.mode, rounds: state.neon.rounds, times: state.neon.times, interval: state.neon.interval });
+      $("neonStatus").textContent = "Windows 네이티브 키 메시지로 측정 중";
+      const measurement = fetch(`${rabbitBridgeUrl}/start?${query}`, { method: "POST" });
+      let polling = false;
+      const updateProgress = async () => {
+        if (polling) return;
+        polling = true;
+        try {
+          const status = await fetch(`${rabbitBridgeUrl}/status`).then((response) => response.json());
+          if (status.samples?.length !== state.samples.length) {
+            state.samples = status.samples.map((sample) => ({ ...sample, deviceAverageUs: 0, deviceStdDevUs: 0 }));
+            render();
+          }
+          $("neonStatus").textContent = `라운드 ${status.round || 1}/${state.neon.rounds} · ${Math.floor((status.samples?.length || 0) / 2)}/${state.neon.rounds * state.neon.times} · CDC ${status.cdcDelay || "—"}µs`;
+        } catch { }
+        finally { polling = false; }
+      };
+      const progressTimer = setInterval(updateProgress, 150);
+      try {
+        const response = await measurement;
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error || "네이티브 측정에 실패했습니다.");
+        state.samples = result.samples.map((sample) => ({ ...sample, deviceAverageUs: 0, deviceStdDevUs: 0 }));
+        state.rabbitCdcDelayUs = Math.round(result.cdcDelays.reduce((sum, value) => sum + value, 0) / result.cdcDelays.length);
+        state.measurement = { method: result.method, version: result.version, keyCode: result.keyCode, elapsedUs: result.elapsedUs, cdcDelays: result.cdcDelays };
+        state.quality = assessNativeQuality(result);
+        render();
+        $("neonStatus").textContent = state.quality.passed ? `완료 · QC PASS · NATIVE · CDC ${state.rabbitCdcDelayUs}µs` : `QC FAIL · ${state.quality.reasons.join(" · ")}`;
+      } finally { clearInterval(progressTimer); }
+    }
+    async function runNeonTest() {
+      if (!state.port) { showToast("먼저 장치 포트를 연결하세요."); return; }
+      if (state.neon.running) { state.neon.running = false; if (state.protocol === "rabbit-native") await fetch(`${rabbitBridgeUrl}/stop`, { method: "POST" }).catch(() => {}); else if (state.protocol === "rabbit") await sendRabbitEdge(false).catch(() => {}); else await sendCommand("STOP").catch(() => {}); $("neonStart").classList.remove("stop"); $("neonStart").textContent = "NEON 테스트 시작"; $("neonStatus").textContent = "테스트를 중지했습니다."; neonRender(); return; }
+      state.neon.rounds = Math.round(neonReadNumber("neonRounds", 1, 20, 4));
+      state.neon.times = Math.round(neonReadNumber("neonTimes", 1, 500, 100));
+      state.neon.interval = neonReadNumber("neonInterval", 0, 60, 2);
+      state.neon.scan = Number($("neonScan").value) || 0;
+      if (state.protocol === "rabbit") state.polling = { measuredHz: 0, intervalUs: 0, configuredHz: state.neon.scan, samples: 0 };
+      state.neon.trigger = $("neonTrigger").checked;
+      state.neon.running = true; state.neon.round = 0; state.neon.startedAt = performance.now();
+      state.samples = []; state.quality = null; state.measurement = null; state.buffer = ""; render();
+      $("neonStart").classList.add("stop"); $("neonStart").textContent = "NEON 테스트 중지";
+      try {
+        if (state.protocol === "rabbit-native") await runNativeRabbitTest();
+        else if (state.protocol === "rabbit") await runRabbitTest();
+        else {
+          await sendCommand("CLEAR");
+          for (let round = 1; round <= state.neon.rounds && state.neon.running; round++) {
+            state.neon.round = round; neonRender(); $("neonStatus").textContent = `라운드 ${round}/${state.neon.rounds} · ${state.neon.times}쌍 대기 중`;
+            await sendCommand("START");
+            const complete = await neonWaitForPairs(state.neon.times * round, Math.max(8000, state.neon.times * 250 + 5000));
+            await sendCommand("STOP");
+            if (!complete) { $("neonStatus").textContent = `라운드 ${round}: ${neonPairCount()}쌍 수신 · 입력/USB 연결을 확인하세요.`; break; }
+            if (round < state.neon.rounds && state.neon.running) await new Promise((resolve) => setTimeout(resolve, state.neon.interval * 1000));
+          }
+        }
+      } catch (error) { $("neonStatus").textContent = error?.message || "NEON 테스트 명령 전송에 실패했습니다."; }
+      state.neon.running = false; $("neonStart").classList.remove("stop"); $("neonStart").textContent = "NEON 테스트 시작"; neonRender();
+    }
+    function formatMs(us) { return us == null ? "—" : (us / 1000).toFixed(2); }
+    function percentile(sorted, ratio) { const index = (sorted.length - 1) * ratio; const lower = Math.floor(index); const upper = Math.ceil(index); return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower); }
+    function computeStats(values) {
+      if (!values.length) return null;
+      const sorted = [...values].sort((a, b) => a - b);
+      const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+      const median = percentile(sorted, .5);
+      const deviations = values.map((value) => Math.abs(value - median)).sort((a, b) => a - b);
+      return { count: values.length, average, median, stdev: Math.sqrt(values.reduce((sum, value) => sum + (value - average) ** 2, 0) / values.length), mad: percentile(deviations, .5), min: sorted[0], max: sorted[sorted.length - 1], p95: percentile(sorted, .95) };
+    }
+    function stats() { return computeStats(state.samples.map((sample) => sample.latencyUs)); }
+    function edgeStats(edge) { return computeStats(state.samples.filter((sample) => sample.edge === edge).map((sample) => sample.latencyUs)); }
+    function effectiveRate(center, deviation) { return center + deviation > 0 ? Math.round(1000000 / (center + deviation)) : 0; }
+    function renderEdgeStats(prefix, result) {
+      ["Average", "Median", "Stdev", "Mad"].forEach((suffix) => $(prefix + suffix).textContent = result ? formatMs(result[suffix.toLowerCase()]) : "—");
+      $(prefix + "EffectiveHz").textContent = result ? effectiveRate(result.average, result.stdev) : "—";
+      $(prefix + "EffectiveMadHz").textContent = result ? effectiveRate(result.median, result.mad) : "—";
+      $(prefix + "Status").textContent = `${result?.count ?? 0} ${prefix === "overall" ? "pairs" : "samples"}`;
+    }
+    function renderPolling() {
+      const measured = state.polling.samples >= 16 && state.polling.measuredHz > 0;
+      const rate = measured ? state.polling.measuredHz : state.polling.configuredHz;
+      const interval = measured ? state.polling.intervalUs : (state.polling.configuredHz ? Math.round(1000000 / state.polling.configuredHz) : 0);
+      $("pollingRate").textContent = rate || "—";
+      $("pollingInterval").textContent = interval || "—";
+      $("pollingMeasured").textContent = measured ? state.polling.measuredHz : "—";
+      $("pollingSamples").textContent = state.polling.samples || "—";
+      $("pollingStatus").textContent = measured ? `${state.polling.samples} reports · MEASURED` : (state.polling.configuredHz ? "USB bInterval · DESCRIPTOR" : "대기 중");
+    }
+    function parseXlatLine(line) {
+      const fields = line.trim().split(";").map((field) => field.trim());
+      if (fields.length >= 5 && (fields[0].toLowerCase() === "press" || fields[0].toLowerCase() === "release")) {
+        const values = fields.slice(1).map(Number);
+        if (!values.slice(0, 4).every(Number.isFinite)) return null;
+        return { edge: fields[0].toLowerCase(), report: values[0], latencyUs: values[1], deviceAverageUs: values[2], deviceStdDevUs: values[3], pollingHz: values[4] || 0, pollingIntervalUs: values[5] || 0, pollingConfiguredHz: values[6] || 0, pollingSamples: values[7] || 0 };
+      }
+      if (fields.length < 4) return null;
+      const values = fields.slice(0, 4).map(Number);
+      if (!values.every(Number.isFinite)) return null;
+      return { edge: "press", report: values[0], latencyUs: values[1], deviceAverageUs: values[2], deviceStdDevUs: values[3] };
+    }
+    function render() {
+      const result = stats();
+      const press = edgeStats("press");
+      const release = edgeStats("release");
+      const overall = press && release ? {
+        count: Math.min(press.count, release.count),
+        average: (press.average + release.average) / 2,
+        stdev: (press.stdev + release.stdev) / 2,
+        median: (press.median + release.median) / 2,
+        mad: (press.mad + release.mad) / 2
+      } : null;
+      renderEdgeStats("press", press);
+      renderEdgeStats("release", release);
+      renderEdgeStats("overall", overall);
+      renderPolling();
+      neonRender();
+      $("sampleLabel").textContent = `${press?.count ?? 0} / ${release?.count ?? 0}`;
+      $("chartEmpty").style.display = state.samples.length ? "none" : "grid";
+      $("chartTop").textContent = `${Math.max(3, Math.ceil((result?.max ?? 3000) / 1000))}.0 ms`;
+      const chart = $("chart");
+      chart.querySelectorAll(".point").forEach((point) => point.remove());
+      const visible = state.samples.slice(-100); const max = Math.max(result?.max ?? 3000, 3000);
+      visible.forEach((sample, index) => { const point = document.createElement("i"); point.className = `point ${sample.edge === "release" ? "release" : ""}`; point.style.left = `${visible.length === 1 ? 50 : 2 + index / (visible.length - 1) * 96}%`; point.style.bottom = `${Math.min(94, 4 + sample.latencyUs / max * 88)}%`; point.title = `${sample.edge.toUpperCase()} · ${formatMs(sample.latencyUs)} ms`; chart.appendChild(point); });
+      const rows = $("sampleRows"); rows.innerHTML = "";
+      if (!state.samples.length) { rows.innerHTML = '<tr><td class="empty-row" colspan="3">아직 측정 데이터가 없습니다.</td></tr>'; return; }
+      const pairs = [];
+      state.samples.forEach((sample) => {
+        if (sample.edge === "press" || !pairs.length || pairs[pairs.length - 1].release) pairs.push({ press: sample.edge === "press" ? sample : null, release: null });
+        else pairs[pairs.length - 1].release = sample;
+      });
+      pairs.slice(-10).reverse().forEach((pair, index) => { const tr = document.createElement("tr"); tr.innerHTML = `<td>#${pairs.length - index}</td><td class="up">${pair.press ? `<span class="edge-badge">PRESS</span><strong>${formatMs(pair.press.latencyUs)} ms</strong>` : "—"}</td><td class="down">${pair.release ? `<span class="edge-badge">RELEASE</span><strong>${formatMs(pair.release.latencyUs)} ms</strong>` : "—"}</td>`; rows.appendChild(tr); });
+    }
+    function addSample(sample) { if (!state.collecting) return; state.samples.push(sample); if (sample.pollingConfiguredHz || sample.pollingSamples) state.polling = { measuredHz: sample.pollingHz, intervalUs: sample.pollingIntervalUs, configuredHz: sample.pollingConfiguredHz, samples: sample.pollingSamples }; render(); }
+    function consumeText(text) {
+      state.buffer += text;
+      const lines = state.buffer.split(/\r\n|\n|\r/); state.buffer = lines.pop() || "";
+      lines.forEach((line) => { if (!line.trim()) return; state.lines += 1; $("rawLine").textContent = line; if (line.trim().startsWith("STATE;")) applyStateLine(line); else { const parsed = parseXlatLine(line); if (parsed) addSample(parsed); } });
+      $("receiveCounters").textContent = `${state.bytes} bytes / ${state.lines} lines`;
+    }
+    function consumeRabbitBytes(value) {
+      state.bytes += value.byteLength;
+      const merged = new Uint8Array(state.binaryBuffer.length + value.length);
+      merged.set(state.binaryBuffer); merged.set(value, state.binaryBuffer.length); state.binaryBuffer = merged;
+      while (state.binaryBuffer.length >= 64) {
+        const packet = state.binaryBuffer.slice(0, 64); state.binaryBuffer = state.binaryBuffer.slice(64); state.lines += 1;
+        const waiterIndex = state.rabbitAckWaiters.findIndex((waiter) => waiter.command === packet[0]);
+        if (waiterIndex >= 0) { const [waiter] = state.rabbitAckWaiters.splice(waiterIndex, 1); clearTimeout(waiter.timer); waiter.resolve(packet); }
+        $("rawLine").textContent = `RABBIT ${Array.from(packet.slice(0, 8), (byte) => byte.toString(16).padStart(2, "0")).join(" ")}`;
+      }
+      $("receiveCounters").textContent = `${state.bytes} bytes / ${state.lines} packets`;
+    }
+    async function readLoop(port) {
+      if (!port.readable) throw new Error("readable stream unavailable");
+      const reader = port.readable.getReader(); state.reader = reader; const decoder = new TextDecoder();
+      try { while (true) { const { value, done } = await reader.read(); if (done) break; if (value) { state.bytes += value.byteLength; consumeText(decoder.decode(value, { stream: true })); } } }
+      catch (error) { if (state.port === port) setStatus("수신 오류", error?.message || "직렬 스트림을 읽을 수 없습니다."); }
+      finally { reader.releaseLock(); if (state.reader === reader) state.reader = null; }
+    }
+    async function readRabbitLoop(port) {
+      if (!port.readable) throw new Error("readable stream unavailable");
+      const reader = port.readable.getReader(); state.reader = reader;
+      try { while (true) { const { value, done } = await reader.read(); if (done) break; if (value) consumeRabbitBytes(value); } }
+      catch (error) { if (state.port === port) setStatus("수신 오류", error?.message || "직렬 스트림을 읽을 수 없습니다."); }
+      finally { reader.releaseLock(); if (state.reader === reader) state.reader = null; }
+    }
+    async function connectRabbitBridge() {
+      try {
+        const response = await fetch(`${rabbitBridgeUrl}/health`, { signal: AbortSignal.timeout(500) });
+        if (!response.ok) return false;
+        const info = await response.json();
+        if (!info.ok) return false;
+        state.protocol = "rabbit-native"; state.port = { bridge: true }; state.collecting = true;
+        $("deviceName").textContent = "TAB Rabbit Native Bridge"; $("deviceId").textContent = "COM5 · WINDOWS QPC"; $("connectedDevice").textContent = "TAB Rabbit · Native";
+        $("connectBtn").disabled = true; $("disconnectBtn").disabled = false; setTriggerButton(false); $("triggerBtn").disabled = true; setRemoteControlsEnabled(false); setNeonEnabled(true);
+        setStatus("네이티브 연결됨", "NeonTester와 동일한 Windows 측정 경로를 사용합니다.", "active"); showToast("TAB Rabbit 네이티브 브리지가 연결되었습니다.");
+        return true;
+      } catch { return false; }
+    }
+    async function connect() {
+      if (await connectRabbitBridge()) return;
+      if (!("serial" in navigator)) { setStatus("Web Serial 미지원", "Chrome 또는 Edge 데스크톱에서 열어주세요."); showToast("이 브라우저는 Web Serial을 지원하지 않습니다."); return; }
+      try {
+        const port = await navigator.serial.requestPort(); const info = port.getInfo?.() || {};
+        state.protocol = info.usbVendorId === 0x54AB && info.usbProductId === 0x52AB ? "rabbit" : "xlat";
+        await port.open(state.protocol === "rabbit" ? rabbitSerialOptions : xlatSerialOptions); state.port = port; state.collecting = true; state.binaryBuffer = new Uint8Array(); state.rabbitAckWaiters = []; state.rabbitCdcDelayUs = 0;
+        const deviceLabel = state.protocol === "rabbit" ? "TAB Rabbit" : "XLAT J-Link VCOM";
+        $("deviceName").textContent = deviceLabel; $("deviceId").textContent = info.usbVendorId ? `VID ${info.usbVendorId.toString(16).padStart(4, "0").toUpperCase()} / PID ${(info.usbProductId ?? 0).toString(16).padStart(4, "0").toUpperCase()}` : "포트가 열렸습니다";
+        $("connectedDevice").textContent = deviceLabel;
+        $("connectBtn").disabled = true; $("disconnectBtn").disabled = false; setTriggerButton(false); $("triggerBtn").disabled = state.protocol === "rabbit"; setRemoteControlsEnabled(state.protocol === "xlat"); setNeonEnabled(true);
+        setStatus("연결됨 · 수신 중", `${deviceLabel} 데이터를 기다리는 중입니다.`, "active"); showToast(`${deviceLabel} 포트가 연결되었습니다.`);
+        if (state.protocol === "rabbit") readRabbitLoop(port);
+        else { readLoop(port); sendCommand("STATUS").catch(() => {}); state.statusTimer = setInterval(() => { if (!state.port?.writable?.locked) sendCommand("STATUS").catch(() => {}); }, 1000); }
+      } catch (error) { setStatus("연결 실패", error?.message || "포트가 열리지 않았습니다."); showToast("포트 선택 또는 연결에 실패했습니다."); }
+    }
+    async function disconnect() { const port = state.port; clearInterval(state.statusTimer); state.statusTimer = null; if (state.neon.running && state.protocol === "rabbit-native") await fetch(`${rabbitBridgeUrl}/stop`, { method: "POST" }).catch(() => {}); else if (state.neon.running && state.protocol === "rabbit") await sendRabbitEdge(false).catch(() => {}); else if (state.triggerRunning || state.neon.running) await sendCommand("STOP").catch(() => {}); state.neon.running = false; state.port = null; await state.reader?.cancel().catch(() => {}); await port?.close?.().catch(() => {}); state.reader = null; $("connectBtn").disabled = false; $("disconnectBtn").disabled = true; $("deviceName").textContent = "장치를 선택하세요"; $("deviceId").textContent = "Web Serial 대기 중"; $("connectedDevice").textContent = "연결 기기 대기 중"; setTriggerButton(false); setRemoteControlsEnabled(false); setNeonEnabled(false); setStatus("연결 해제", "장치 포트를 다시 선택할 수 있습니다."); }
+    async function clearData() { if (state.port && state.protocol === "xlat") await sendCommand("CLEAR").catch(() => {}); state.samples = []; state.quality = null; state.measurement = null; state.buffer = ""; state.binaryBuffer = new Uint8Array(); state.polling = { measuredHz: 0, intervalUs: 0, configuredHz: 0, samples: 0 }; render(); setStatus(state.port ? "연결됨 · 수신 중" : "연결 전", state.port ? "새 샘플을 기다리는 중입니다." : "Chrome 또는 Edge에서 포트를 선택하세요.", state.port ? "active" : ""); }
+    function loadDemo() { state.samples = demoValues.map((ms, index) => ({ edge: index % 2 ? "release" : "press", report: index + 1, latencyUs: Math.round(ms * 1000), deviceAverageUs: 0, deviceStdDevUs: 0 })); state.polling = { measuredHz: 7998, intervalUs: 125, configuredHz: 8000, samples: 128 }; render(); setStatus("데모 데이터", "실제 포트가 아닌 예시값입니다."); showToast("Press/Release 데모 데이터 20개를 표시했습니다."); }
+    function exportCsv() { if (!state.samples.length) { showToast("내보낼 측정값이 없습니다."); return; } const rows = [["edge", "report", "round", "index", "latency_us", "raw_latency_us", "correction_us", "latency_ms", "polling_hz"], ...state.samples.map((sample) => [sample.edge, sample.report, sample.round || "", sample.index || "", sample.latencyUs, sample.rawLatencyUs ?? "", sample.correctionUs ?? "", formatMs(sample.latencyUs), sample.pollingHz || ""])]; const blob = new Blob([rows.map((row) => row.join(",")).join("\n")], { type: "text/csv;charset=utf-8" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `itlubs-benchmark-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(link.href); }
+    function openSaveDialog() {
+      if (!state.samples.some((sample) => sample.edge === "press") || !state.samples.some((sample) => sample.edge === "release")) { showToast("PRESS와 RELEASE 측정값이 모두 필요합니다."); return; }
+      if (state.protocol === "rabbit-native" && !state.quality?.passed) { showToast(`QC 실패: ${state.quality?.reasons?.join(" · ") || "검증되지 않은 측정"}`); return; }
+      $("saveManufacturer").value = state.device.manufacturer;
+      $("saveProduct").value = state.device.product;
+      $("savePollingSetting").value = state.polling.configuredHz ? `${state.polling.configuredHz} Hz` : "";
+      $("saveDebounceSetting").value = `${$("debounceSelect").value} ms`;
+      $("saveStatus").textContent = `${state.samples.length}개 원본 샘플을 저장합니다.`;
+      $("saveDialog").showModal();
+    }
+    async function saveBenchmark(event) {
+      event.preventDefault();
+      const payload = {
+        manufacturer: $("saveManufacturer").value,
+        product: $("saveProduct").value,
+        vidpid: state.device.vidpid,
+        connection: $("saveConnection").value,
+        mouseFirmware: $("saveMouseFirmware").value,
+        pollingSetting: $("savePollingSetting").value,
+        debounceSetting: $("saveDebounceSetting").value,
+        motionSync: $("saveMotionSync").value,
+        profileName: $("saveProfileName").value,
+        notes: $("saveNotes").value,
+        measurementDevice: state.protocol === "rabbit-native" ? "TAB Rabbit" : "XLAT",
+        xlatFirmware: state.protocol === "rabbit-native" ? null : "itlubs 1.1.3",
+        measurement: state.measurement,
+        quality: state.quality,
+        polling: state.polling,
+        samples: state.samples.map(({ edge, report, round, index, latencyUs, rawLatencyUs, correctionUs }) => ({ edge, report, round, index, latencyUs, rawLatencyUs, correctionUs })),
+      };
+      $("saveStatus").textContent = "저장 중…";
+      try {
+        const response = await fetch("/api/admin/benchmarks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(response.status === 403 ? "관리자 로그인이 필요합니다. /admin/에서 로그인 후 다시 저장하세요." : result.error);
+        $("saveStatus").textContent = "저장 완료";
+        showToast("측정값을 iTLUBS DATABASE에 저장했습니다.");
+        setTimeout(() => $("saveDialog").close(), 500);
+      } catch (error) {
+        $("saveStatus").textContent = error.message || "저장하지 못했습니다.";
+      }
+    }
+
+    $("connectBtn").addEventListener("click", connect); $("disconnectBtn").addEventListener("click", disconnect); $("triggerBtn").addEventListener("click", toggleTrigger); $("clearBtn").addEventListener("click", clearData); $("demoBtn").addEventListener("click", loadDemo); $("exportBtn").addEventListener("click", exportCsv); $("saveDbBtn").addEventListener("click", openSaveDialog); $("saveCancel").addEventListener("click", () => $("saveDialog").close()); $("saveForm").addEventListener("submit", saveBenchmark); $("rebootBtn").addEventListener("click", rebootDevice); $("edgeSelect").addEventListener("change", (event) => applySetting("EDGE", event.target.value === "2" ? "BOTH" : (event.target.value === "1" ? "RISING" : "FALLING"))); $("debounceSelect").addEventListener("change", (event) => applySetting("DEBOUNCE", event.target.value)); $("levelSelect").addEventListener("change", (event) => applySetting("TRIGGER_LEVEL", event.target.value === "1" ? "HIGH" : "LOW")); $("modeSelect").addEventListener("change", (event) => applySetting("MODE", event.target.value)); $("neonWired").addEventListener("click", () => neonSetMode("wired")); $("neonHe").addEventListener("click", () => neonSetMode("he")); $("neonStart").addEventListener("click", runNeonTest); setRemoteControlsEnabled(false); setNeonEnabled(false); render();
+    function blockMeasuredKey(event) { if (state.neon.running) { event.preventDefault(); event.stopImmediatePropagation(); } }
+    window.addEventListener("keydown", blockMeasuredKey, true);
+    window.addEventListener("keyup", blockMeasuredKey, true);
+    window.addEventListener("keydown", (event) => { if (state.neon.trigger && state.port && !state.neon.running && !event.repeat && (event.target === document.body || event.target === document.documentElement)) runNeonTest(); });
+    window.addEventListener("beforeunload", () => { clearInterval(state.statusTimer); state.reader?.cancel().catch(() => {}); });
+  </script>
+</body>
+</html>

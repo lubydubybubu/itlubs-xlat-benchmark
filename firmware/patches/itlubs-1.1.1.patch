@@ -1,0 +1,1089 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 81a26b2..3be148b 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -21,8 +21,8 @@ set(CMAKE_ASM_SOURCE_FILE_EXTENSIONS s)
+ 
+ # Define the application version
+ set(APP_VERSION_MAJOR 1)
+-set(APP_VERSION_MINOR 4)
+-set(APP_VERSION_PATCH 0) # patch level 99 = work-in-progress for next release
++set(APP_VERSION_MINOR 1)
++set(APP_VERSION_PATCH 1) # patch level 99 = work-in-progress for next release
+ set(APP_VERSION_STRING "${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}")
+ 
+ add_compile_options(
+diff --git a/src/config/FreeRTOSConfig.h b/src/config/FreeRTOSConfig.h
+index 2285853..c3c1e29 100644
+--- a/src/config/FreeRTOSConfig.h
++++ b/src/config/FreeRTOSConfig.h
+@@ -65,7 +65,7 @@
+ #define configTICK_RATE_HZ                       ((TickType_t)1000)
+ #define configMAX_PRIORITIES                     ( 7 )
+ #define configMINIMAL_STACK_SIZE                 ((uint16_t)128)
+-#define configTOTAL_HEAP_SIZE                    ((size_t)32768 / 2)
++#define configTOTAL_HEAP_SIZE                    ((size_t)32768 * 5 / 8)
+ #define configMAX_TASK_NAME_LEN                  ( 16 )
+ #define configUSE_16_BIT_TICKS                   0
+ #define configUSE_MUTEXES                        1
+diff --git a/src/gfx_main.c b/src/gfx_main.c
+index 93a18cf..6a2a432 100644
+--- a/src/gfx_main.c
++++ b/src/gfx_main.c
+@@ -26,41 +26,38 @@
+ #include "usb_host.h"
+ 
+ #define Y_CHART_SIZE_X 410
+-#define Y_CHART_SIZE_Y 130
++#define Y_CHART_SIZE_Y 62
+ 
+ #define X_CHART_RANGE 1000
+ #define Y_CHART_RANGE 2000
+ 
+ lv_color_t lv_color_lightblue = LV_COLOR_MAKE(0xa6, 0xd1, 0xd1);
+ 
+-static lv_obj_t * chart;
+-static lv_obj_t * latency_label;
++static lv_obj_t * charts[2];
++static lv_obj_t * latency_labels[2];
+ static lv_obj_t * productname_label;
+ static lv_obj_t * manufacturer_label;
+ static lv_obj_t * vidpid_label;
+ static lv_obj_t * hid_offsets_label;
+-static lv_obj_t * trigger_label;
+ static lv_obj_t * trigger_ready_cb;
+ 
+-static size_t chart_point_count = 0;
+-static lv_coord_t chart_y_range = 0;
+-
+-static lv_timer_t * trigger_timer = NULL;
+-static lv_timer_t * trigger_timer_turn_off = NULL;
+-
+-static void chart_reset(void);
++static size_t chart_point_count[2] = {0, 0};
++static lv_coord_t chart_y_range[2] = {0, 0};
+ 
+ LV_IMG_DECLARE(xlat_logo);
+ 
+ static void latency_label_update(void)
+ {
+-    lv_label_set_text_fmt(latency_label, "#%lu: %ldus, avg %ldus, stdev %ldus",
+-                          xlat_get_latency_count(LATENCY_GPIO_TO_USB),
+-                          xlat_get_latency_us(LATENCY_GPIO_TO_USB),
+-                          xlat_get_average_latency(LATENCY_GPIO_TO_USB),
+-                          xlat_get_latency_standard_deviation(LATENCY_GPIO_TO_USB)
+-                          );
+-    lv_obj_align_to(latency_label, chart, LV_ALIGN_OUT_TOP_MID, 0, 0);
++    static const char *names[2] = {"PRESS", "RELEASE"};
++    for (int type = LATENCY_GPIO_TO_USB_PRESS; type <= LATENCY_GPIO_TO_USB_RELEASE; type++) {
++        lv_label_set_text_fmt(latency_labels[type], "%s  #%lu  %ldus  avg %ldus  sd %ldus",
++                              names[type],
++                              xlat_get_latency_count(type),
++                              xlat_get_latency_us(type),
++                              xlat_get_average_latency(type),
++                              xlat_get_latency_standard_deviation(type));
++        lv_obj_align_to(latency_labels[type], charts[type], LV_ALIGN_OUT_TOP_LEFT, 0, -1);
++    }
+ }
+ 
+ void gfx_set_device_label(const char * manufacturer, const char * productname, const char *vidpid)
+@@ -74,26 +71,6 @@ void gfx_set_device_label(const char * manufacturer, const char * productname, c
+     lv_obj_align_to(productname_label, manufacturer_label, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 5);
+ }
+ 
+-static void btn_clear_event_cb(lv_event_t * e)
+-{
+-    lv_event_code_t code = lv_event_get_code(e);
+-
+-    if (code == LV_EVENT_CLICKED) {
+-        // reset latency numbers
+-        xlat_reset_latency();
+-        chart_reset();
+-        latency_label_update();
+-    }
+-}
+-
+-static void btn_reboot_event_cb(lv_event_t * e)
+-{
+-    lv_event_code_t code = lv_event_get_code(e);
+-    if (code == LV_EVENT_CLICKED) {
+-        NVIC_SystemReset();
+-    }
+-}
+-
+ static void btn_settings_event_cb(lv_event_t * e)
+ {
+     lv_event_code_t code = lv_event_get_code(e);
+@@ -104,103 +81,27 @@ static void btn_settings_event_cb(lv_event_t * e)
+     }
+ }
+ 
+-static void auto_trigger_clear_timer(void)
+-{
+-    // Reset the trigger label
+-    lv_label_set_text(trigger_label, "TRIGGER");
+-    lv_obj_center(trigger_label);
+-
+-    // Stop the timer
+-    lv_timer_del(trigger_timer);
+-    trigger_timer = NULL;
+-}
+-
+-void auto_trigger_turn_off_callback(lv_timer_t * timer)
+-{
+-    (void)timer;
+-    xlat_auto_trigger_turn_off_action();
+-}
+-
+-void auto_trigger_callback(lv_timer_t * timer)
+-{
+-    char label[20];
+-    size_t * count = timer->user_data;
+-
+-    xlat_auto_trigger_action();
+-    trigger_timer_turn_off = lv_timer_create(auto_trigger_turn_off_callback, AUTO_TRIGGER_PRESSED_PERIOD_MS, NULL);
+-    lv_timer_set_repeat_count(trigger_timer_turn_off, 1);
+-
+-    *count = (*count) - 1;
+-    if (*count) {
+-        sprintf(label, "%lu", (long)*count);
+-        lv_label_set_text(trigger_label, label);    /*Set the labels text*/
+-        lv_obj_center(trigger_label);
+-
+-        // Restart the timer with a random period added to the base period
+-        lv_timer_set_period(timer, AUTO_TRIGGER_PERIOD_MS + (rand() % 10));
+-    } else {
+-        auto_trigger_clear_timer();
+-    }
+-}
+-
+-static void btn_trigger_event_cb(lv_event_t * e)
+-{
+-    static int32_t count;
+-
+-    lv_event_code_t code = lv_event_get_code(e);
+-
+-    if (code == LV_EVENT_CLICKED) {
+-        if (count) {
+-            // Already running
+-            count = 0;
+-            auto_trigger_clear_timer();
+-        } else {
+-            // Trigger a new series of measurements
+-            printf("AutoTrigger activated\n");
+-            count = 1000;
+-            // seed the random number generator
+-            srand(xlat_counter_1mhz_get());
+-            // start the timer
+-            trigger_timer = lv_timer_create(auto_trigger_callback, AUTO_TRIGGER_PERIOD_MS,  &count);
+-            //lv_timer_set_repeat_count(timer, count);
+-        }
+-    }
+-}
+-
+ #if LV_USE_CHART && LV_USE_SLIDER
+ 
+-static void chart_reset(void)
+-{
+-    lv_chart_series_t * ser = lv_chart_get_series_next(chart, NULL);
+-    lv_chart_remove_series(chart, ser);
+-    lv_chart_add_series(chart, lv_color_lightblue, LV_CHART_AXIS_PRIMARY_Y);
+-    lv_chart_set_x_start_point(chart, ser, 0);
+-
+-    chart_point_count = 0;
+-    chart_y_range = Y_CHART_RANGE;
+-    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, chart_y_range);
+-
+-    lv_chart_refresh(chart);
+-}
+-
+-static void chart_update(uint32_t value)
++static void chart_update(uint32_t value, enum latency_type type)
+ {
+-    lv_chart_set_next_value(chart, lv_chart_get_series_next(chart, NULL), (lv_coord_t)value);
++    if (type != LATENCY_GPIO_TO_USB_PRESS && type != LATENCY_GPIO_TO_USB_RELEASE) {
++        return;
++    }
++    lv_chart_set_next_value(charts[type], lv_chart_get_series_next(charts[type], NULL), (lv_coord_t)value);
+ 
+-    chart_point_count++;
++    chart_point_count[type]++;
+ 
+     value = value > INT16_MAX ? INT16_MAX : value; // clip to 16-bit signed (lv_coord_t)
+     value = (value + 999) / 1000 * 1000; // round up to nearest 1000
+ 
+     // update y-axis range if needed
+-    if (value > chart_y_range) {
+-        chart_y_range = (lv_coord_t)value;
++    if (value > chart_y_range[type]) {
++        chart_y_range[type] = (lv_coord_t)value;
+     }
+ 
+-    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, chart_y_range);
+-
+-    // refresh the chart
+-    lv_chart_refresh(chart);
++    lv_chart_set_range(charts[type], LV_CHART_AXIS_PRIMARY_Y, 0, chart_y_range[type]);
++    lv_chart_refresh(charts[type]);
+ }
+ 
+ /**
+@@ -210,23 +111,20 @@ static void chart_update(uint32_t value)
+  */
+ void lv_chart_new(lv_coord_t xrange, lv_coord_t yrange)
+ {
+-    // Create a chart
+-    chart = lv_chart_create(lv_scr_act());
+-    lv_obj_set_size(chart, Y_CHART_SIZE_X, Y_CHART_SIZE_Y);
+-    lv_obj_align(chart, LV_ALIGN_CENTER, 20, 10);
+-    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, yrange);
+-    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_X, 0, xrange);
+-
+-    // Do not display points on the data
+-    lv_obj_set_style_size(chart, 0, LV_PART_INDICATOR);
+-
+-    lv_chart_add_series(chart, lv_color_lightblue, LV_CHART_AXIS_PRIMARY_Y);
+-
+-    lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_X, 10, 5, 11, 2, true, 20);
+-    // Y-axis: major tick every 1ms
+-    lv_chart_set_axis_tick(chart, LV_CHART_AXIS_PRIMARY_Y, 10, 5, 5 + 1, 2, true, 60);
+-
+-    chart_y_range = yrange;
++    for (int type = LATENCY_GPIO_TO_USB_PRESS; type <= LATENCY_GPIO_TO_USB_RELEASE; type++) {
++        charts[type] = lv_chart_create(lv_scr_act());
++        lv_obj_set_size(charts[type], Y_CHART_SIZE_X, Y_CHART_SIZE_Y);
++        lv_obj_align(charts[type], LV_ALIGN_CENTER, 20, type == LATENCY_GPIO_TO_USB_PRESS ? -35 : 50);
++        lv_chart_set_range(charts[type], LV_CHART_AXIS_PRIMARY_Y, 0, yrange);
++        lv_chart_set_range(charts[type], LV_CHART_AXIS_PRIMARY_X, 0, xrange);
++        lv_obj_set_style_size(charts[type], 0, LV_PART_INDICATOR);
++        lv_chart_add_series(charts[type],
++                            type == LATENCY_GPIO_TO_USB_PRESS ? lv_palette_main(LV_PALETTE_ORANGE) : lv_palette_main(LV_PALETTE_GREEN),
++                            LV_CHART_AXIS_PRIMARY_Y);
++        lv_chart_set_axis_tick(charts[type], LV_CHART_AXIS_PRIMARY_X, 10, 5, 11, 2, true, 20);
++        lv_chart_set_axis_tick(charts[type], LV_CHART_AXIS_PRIMARY_Y, 10, 5, 3, 2, true, 60);
++        chart_y_range[type] = yrange;
++    }
+ }
+ 
+ #endif
+@@ -314,10 +212,9 @@ static void gfx_xlat_gui(void)
+     // Load theme
+     new_theme_init_and_set();
+ 
+-    // Draw logo
+-    lv_obj_t * logo = lv_img_create(lv_scr_act());
+-    lv_img_set_src(logo, &xlat_logo);
+-    lv_obj_align(logo, LV_ALIGN_TOP_LEFT, 12, 5);
++    lv_obj_t *brand_label = lv_label_create(lv_scr_act());
++    lv_label_set_text(brand_label, "itlubs " APP_VERSION);
++    lv_obj_align(brand_label, LV_ALIGN_TOP_LEFT, 12, 8);
+ 
+     ///////////////////////////
+     // DEVICE INFO TOP RIGHT //
+@@ -345,32 +242,10 @@ static void gfx_xlat_gui(void)
+     // BUTTONS AT THE BOTTOM //
+     ///////////////////////////
+ 
+-    // Clear button
+-    lv_obj_t * clear_btn = lv_btn_create(lv_scr_act());
+-    lv_obj_align(clear_btn, LV_ALIGN_BOTTOM_LEFT, 10, -5);
+-    lv_obj_set_size(clear_btn, GFX_BTN_WIDTH, GFX_BTN_HEIGHT);
+-    lv_obj_add_event_cb(clear_btn, btn_clear_event_cb, LV_EVENT_ALL, NULL);
+-
+-    // Reset button label
+-    lv_obj_t * reset_label = lv_label_create(clear_btn);
+-    lv_label_set_text(reset_label, "CLEAR");
+-    lv_obj_center(reset_label);
+-
+-    // Reboot button
+-    lv_obj_t * reboot_btn = lv_btn_create(lv_scr_act());
+-    lv_obj_align_to(reboot_btn, clear_btn, LV_ALIGN_OUT_RIGHT_TOP, 10, 0);
+-    lv_obj_set_size(reboot_btn, GFX_BTN_WIDTH, GFX_BTN_HEIGHT);
+-    lv_obj_add_event_cb(reboot_btn, btn_reboot_event_cb, LV_EVENT_ALL, NULL);
+-
+-    // Reboot button label
+-    lv_obj_t * reboot_label = lv_label_create(reboot_btn);
+-    lv_label_set_text(reboot_label, "REBOOT");
+-    lv_obj_center(reboot_label);
+-
+     // Settings button
+     lv_obj_t * settings_btn = lv_btn_create(lv_scr_act());
+-    lv_obj_align_to(settings_btn, reboot_btn, LV_ALIGN_OUT_RIGHT_TOP, 10, 0);
+-    lv_obj_set_size(settings_btn, GFX_BTN_WIDTH, GFX_BTN_HEIGHT);
++    lv_obj_align(settings_btn, LV_ALIGN_BOTTOM_MID, 0, -5);
++    lv_obj_set_size(settings_btn, 110, GFX_BTN_HEIGHT);
+     lv_obj_add_event_cb(settings_btn, btn_settings_event_cb, LV_EVENT_ALL, NULL);
+ 
+     // Settings button label
+@@ -378,27 +253,14 @@ static void gfx_xlat_gui(void)
+     lv_label_set_text(settings_label, "SETTINGS");
+     lv_obj_center(settings_label);
+ 
+-    // Trigger button
+-    lv_obj_t * trigger_btn = lv_btn_create(lv_scr_act());
+-    lv_obj_align_to(trigger_btn, settings_btn, LV_ALIGN_OUT_RIGHT_TOP, 10, 0);
+-    lv_obj_set_size(trigger_btn, GFX_BTN_WIDTH, GFX_BTN_HEIGHT);
+-    lv_obj_add_event_cb(trigger_btn, btn_trigger_event_cb, LV_EVENT_ALL, NULL);
+-
+-    // Trigger button label
+-    trigger_label = lv_label_create(trigger_btn);
+-    lv_label_set_text(trigger_label, "TRIGGER");
+-    lv_obj_center(trigger_label);
+-
+-    // Latency label
+-    latency_label = lv_label_create(lv_scr_act());
+-    lv_label_set_text(latency_label, "Click to start measurement...");
+-    lv_obj_align_to(latency_label, chart, LV_ALIGN_OUT_TOP_MID, 0, 0);
+-
+     ///////////
+     // CHART //
+     ///////////
+     lv_chart_new(X_CHART_RANGE, Y_CHART_RANGE);
+-    lv_chart_add_cursor(chart, lv_color_white(), LV_DIR_TOP);
++    for (int type = LATENCY_GPIO_TO_USB_PRESS; type <= LATENCY_GPIO_TO_USB_RELEASE; type++) {
++        latency_labels[type] = lv_label_create(lv_scr_act());
++    }
++    latency_label_update();
+ }
+ 
+ 
+@@ -437,14 +299,13 @@ void gfx_task(void)
+                 xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
+                 {
+                     // update chart data
+-                    chart_update(g_evt->value);
++                    chart_update(g_evt->value, (enum latency_type)g_evt->measurement_type);
+ 
+                     // update to latest xlat measurements
+                     latency_label_update();
+                 }
+                 xSemaphoreGive(lvgl_mutex);
+ 
+-                xlat_print_measurement();
+                 break;
+ 
+             case GFX_EVENT_HID_DEVICE_CONNECTED:
+diff --git a/src/gfx_main.h b/src/gfx_main.h
+index c8cfe59..7355693 100644
+--- a/src/gfx_main.h
++++ b/src/gfx_main.h
+@@ -34,6 +34,7 @@ typedef enum gfx_event_type {
+ struct gfx_event {
+     gfx_event_t type;
+     int32_t value;
++    int32_t measurement_type;
+ };
+ 
+ void gfx_init(void);
+diff --git a/src/gfx_settings.c b/src/gfx_settings.c
+index fc48ca3..866268d 100644
+--- a/src/gfx_settings.c
++++ b/src/gfx_settings.c
+@@ -63,18 +63,22 @@ static void event_handler(lv_event_t* e)
+                     val = 20;
+                     break;
+                 case 1:
++                    // Set hold-off time to 50ms
++                    val = 50;
++                    break;
++                case 2:
+                     // Set hold-off time to 100ms
+                     val = 100;
+                     break;
+-                case 2:
++                case 3:
+                     // Set hold-off time to 200ms
+                     val = 200;
+                     break;
+-                case 3:
++                case 4:
+                     // Set hold-off time to 500ms
+                     val = 500;
+                     break;
+-                case 4:
++                case 5:
+                     // Set hold-off time to 1000ms
+                     val = 1000;
+                     break;
+@@ -119,7 +123,7 @@ void gfx_settings_create_page(lv_obj_t *previous_screen)
+     lv_obj_align(edge_label, LV_ALIGN_TOP_LEFT, 10, 10);
+ 
+     edge_dropdown = (lv_dropdown_t *) lv_dropdown_create(settings_screen);
+-    lv_dropdown_set_options((lv_obj_t *) edge_dropdown, "Falling\nRising");
++    lv_dropdown_set_options((lv_obj_t *) edge_dropdown, "Falling\nRising\nBoth");
+     // Will align this after determining max label width
+     lv_obj_add_event_cb((struct _lv_obj_t *) edge_dropdown, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+ 
+@@ -130,7 +134,7 @@ void gfx_settings_create_page(lv_obj_t *previous_screen)
+     lv_obj_align_to(debounce_label, edge_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 30);
+ 
+     debounce_dropdown = (lv_slider_t *) lv_dropdown_create(settings_screen);
+-    lv_dropdown_set_options((lv_obj_t *) debounce_dropdown, "20ms\n100ms\n200ms\n500ms\n1000ms");
++    lv_dropdown_set_options((lv_obj_t *) debounce_dropdown, "20ms\n50ms\n100ms\n200ms\n500ms\n1000ms");
+     // Will align this after determining max label width
+     lv_obj_add_event_cb((struct _lv_obj_t *) debounce_dropdown, event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+ 
+@@ -192,7 +196,7 @@ void gfx_settings_create_page(lv_obj_t *previous_screen)
+     lv_obj_t *version_label = lv_label_create(settings_screen);
+     // Get the version number from APP_VERSION_* defines
+     char version_str[30];
+-    sprintf(version_str, "XLAT v%s", APP_VERSION_FULL);
++    sprintf(version_str, "itlubs %s", APP_VERSION);
+     lv_label_set_text(version_label, version_str);
+     lv_obj_align(version_label, LV_ALIGN_TOP_RIGHT, -10, 10);
+ 
+@@ -204,18 +208,21 @@ void gfx_settings_create_page(lv_obj_t *previous_screen)
+         case 20:
+             debounce_index = 0;
+             break;
+-        case 100:
++        case 50:
+             debounce_index = 1;
+             break;
+-        case 200:
++        case 100:
+             debounce_index = 2;
+             break;
+-        case 500:
++        case 200:
+             debounce_index = 3;
+             break;
+-        case 1000:
++        case 500:
+             debounce_index = 4;
+             break;
++        case 1000:
++            debounce_index = 5;
++            break;
+         default:
+             break;
+     }
+@@ -226,7 +233,7 @@ void gfx_settings_create_page(lv_obj_t *previous_screen)
+ 
+ 
+     // Display current detection edge
+-    lv_dropdown_set_selected((lv_obj_t *) edge_dropdown, hw_config_input_trigger_is_rising_edge());
++    lv_dropdown_set_selected((lv_obj_t *) edge_dropdown, hw_config_input_trigger_get_mode());
+ 
+     // Display current auto-trigger level
+     lv_dropdown_set_selected((lv_obj_t *) trigger_dropdown, xlat_auto_trigger_level_is_high());
+diff --git a/src/hardware_config.c b/src/hardware_config.c
+index 55b6c2d..7e6f890 100644
+--- a/src/hardware_config.c
++++ b/src/hardware_config.c
+@@ -45,7 +45,7 @@ static void MX_TIM2_Init(void);
+ static void MX_USART1_UART_Init(void);
+ static void MX_USART6_UART_Init(void);
+ 
+-static bool rising_edge = false;
++static hw_input_trigger_mode_t input_trigger_mode = HW_INPUT_TRIGGER_FALLING;
+ 
+ /**
+   * @brief  The application entry point.
+@@ -621,7 +621,7 @@ static void MX_GPIO_Init(void)
+     HAL_GPIO_WritePin(ARDUINO_D11_GPIO_Port, ARDUINO_D11_Pin, GPIO_PIN_SET); // Set high, not draining or pulling low
+ 
+     /* Detect MOUSE BUTTON -> Interrupt */
+-    hw_config_input_trigger(rising_edge);
++    hw_config_input_trigger(input_trigger_mode);
+ 
+     /*Configure GPIO pin : PB2 */
+     GPIO_InitStruct.Pin = GPIO_PIN_2;
+@@ -666,14 +666,19 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+ }
+ 
+ 
+-void hw_config_input_trigger(bool rising)
++void hw_config_input_trigger(hw_input_trigger_mode_t mode)
+ {
+-    rising_edge = rising;
+-    uint32_t mode = rising_edge ? GPIO_MODE_IT_RISING : GPIO_MODE_IT_FALLING;
++    input_trigger_mode = mode;
++    uint32_t gpio_mode = GPIO_MODE_IT_FALLING;
++    if (input_trigger_mode == HW_INPUT_TRIGGER_RISING) {
++        gpio_mode = GPIO_MODE_IT_RISING;
++    } else if (input_trigger_mode == HW_INPUT_TRIGGER_BOTH) {
++        gpio_mode = GPIO_MODE_IT_RISING_FALLING;
++    }
+ 
+     GPIO_InitTypeDef GPIO_InitStruct = {0};
+     GPIO_InitStruct.Pin = ARDUINO_D12_Pin;
+-    GPIO_InitStruct.Mode = mode; // GPIO threshold direction
++    GPIO_InitStruct.Mode = gpio_mode; // GPIO threshold direction
+     GPIO_InitStruct.Pull = GPIO_NOPULL;
+     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+     HAL_GPIO_Init(ARDUINO_D12_GPIO_Port, &GPIO_InitStruct);
+@@ -681,5 +686,15 @@ void hw_config_input_trigger(bool rising)
+ 
+ bool hw_config_input_trigger_is_rising_edge(void)
+ {
+-    return rising_edge;
+-}
+\ No newline at end of file
++    return input_trigger_mode == HW_INPUT_TRIGGER_RISING;
++}
++
++hw_input_trigger_mode_t hw_config_input_trigger_get_mode(void)
++{
++    return input_trigger_mode;
++}
++
++bool hw_config_input_trigger_is_both_edges(void)
++{
++    return input_trigger_mode == HW_INPUT_TRIGGER_BOTH;
++}
+diff --git a/src/hardware_config.h b/src/hardware_config.h
+index c381f68..36e4946 100644
+--- a/src/hardware_config.h
++++ b/src/hardware_config.h
+@@ -18,6 +18,8 @@
+ #ifndef HARDWARE_CONFIG_H
+ #define HARDWARE_CONFIG_H
+ 
++#include <stdbool.h>
++
+ #define XLAT_TIMx                           TIM2
+ #define XLAT_TIMx_CLK_ENABLE()              __HAL_RCC_TIM2_CLK_ENABLE()
+ #define XLAT_TIMx_handle                   htim2
+@@ -26,7 +28,15 @@ int hw_init(void);
+ void hw_debug_init(void);
+ void hw_exti_interrupts_enable(void);
+ void hw_exti_interrupts_disable(void);
+-void hw_config_input_trigger(bool rising);
++typedef enum hw_input_trigger_mode {
++    HW_INPUT_TRIGGER_FALLING = 0,
++    HW_INPUT_TRIGGER_RISING = 1,
++    HW_INPUT_TRIGGER_BOTH = 2,
++} hw_input_trigger_mode_t;
++
++void hw_config_input_trigger(hw_input_trigger_mode_t mode);
++hw_input_trigger_mode_t hw_config_input_trigger_get_mode(void);
+ bool hw_config_input_trigger_is_rising_edge(void);
++bool hw_config_input_trigger_is_both_edges(void);
+ 
+ #endif //HARDWARE_CONFIG_H
+diff --git a/src/main.c b/src/main.c
+index bce21ae..0c09540 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -16,6 +16,8 @@
+  */
+ #include <stdio.h>
+ #include <stdbool.h>
++#include <stdlib.h>
++#include <string.h>
+ #include "main.h"
+ #include "cmsis_os.h"
+ #include "usb_host.h"
+@@ -31,7 +33,7 @@ osThreadId lvglTaskHandle;
+ osPoolDef(hidevt_pool, 16, hid_event_t);               // Define memory pool
+ osPoolId  hidevt_pool;
+ 
+-osPoolDef(gfxevt_pool, 16, gfx_event_t);               // Define memory pool
++osPoolDef(gfxevt_pool, 16, struct gfx_event);          // Define memory pool
+ osPoolId  gfxevt_pool;
+ 
+ osMessageQDef(msgQUsbClick, 16, hid_event_t *);              // Define message queue
+@@ -40,6 +42,139 @@ osMessageQId  msgQUsbClick;
+ osMessageQDef(msgQGfxTask, 4, gfx_event_t *);              // Define message queue
+ osMessageQId  msgQGfxTask;
+ 
++static void vcp_command_task(void const * argument);
++
++static void web_trigger_start(void)
++{
++    srand(xlat_counter_1mhz_get());
++}
++
++static void web_trigger_status(bool running)
++{
++    hid_data_location_t *button = xlat_get_button_location();
++    hid_data_location_t *x = xlat_get_x_location();
++    hid_data_location_t *y = xlat_get_y_location();
++    char status[384];
++    const char *edge = hw_config_input_trigger_is_both_edges()
++        ? "both"
++        : (hw_config_input_trigger_is_rising_edge() ? "rising" : "falling");
++
++    snprintf(status, sizeof(status),
++             "STATE;trigger=%s;edge=%s;debounce_ms=%lu;level=%s;mode=%s;reportid=%u;click_offset=%d;x_offset=%d;y_offset=%d;manufacturer=%s;product=%s;vidpid=%s\r\n",
++             running ? "running" : "idle",
++             edge,
++             (unsigned long)(xlat_get_gpio_irq_holdoff_us() / 1000),
++             xlat_auto_trigger_level_is_high() ? "high" : "low",
++             xlat_get_mode() == XLAT_MODE_MOTION ? "motion" : "click",
++             xlat_get_using_reportid() ? 1 : 0,
++             button->found ? (int)button->byte_offset : -1,
++             x->found ? (int)x->byte_offset : -1,
++             y->found ? (int)y->byte_offset : -1,
++             usb_host_get_manuf_string(),
++             usb_host_get_product_string(),
++             usb_host_get_vidpid_string());
++    vcp_writestr(status);
++}
++
++static void web_trigger_handle_command(const char *command, bool *running, uint32_t *remaining)
++{
++    if (strcmp(command, "START") == 0) {
++        web_trigger_start();
++        *remaining = 1000;
++        *running = true;
++    } else if (strcmp(command, "STOP") == 0) {
++        *running = false;
++        *remaining = 0;
++        xlat_auto_trigger_turn_off_action();
++    } else if (strcmp(command, "CLEAR") == 0) {
++        xlat_reset_latency();
++    } else if (strcmp(command, "REBOOT") == 0) {
++        NVIC_SystemReset();
++    } else if (strcmp(command, "EDGE RISING") == 0) {
++        hw_config_input_trigger(HW_INPUT_TRIGGER_RISING);
++    } else if (strcmp(command, "EDGE FALLING") == 0) {
++        hw_config_input_trigger(HW_INPUT_TRIGGER_FALLING);
++    } else if (strcmp(command, "EDGE BOTH") == 0) {
++        hw_config_input_trigger(HW_INPUT_TRIGGER_BOTH);
++    } else if (strncmp(command, "DEBOUNCE ", 9) == 0) {
++        uint32_t milliseconds = (uint32_t)strtoul(command + 9, NULL, 10);
++        if (milliseconds == 20 || milliseconds == 50 || milliseconds == 100 || milliseconds == 200 || milliseconds == 500 || milliseconds == 1000) {
++            xlat_set_gpio_irq_holdoff_us(milliseconds * 1000);
++        }
++    } else if (strcmp(command, "TRIGGER_LEVEL HIGH") == 0) {
++        xlat_auto_trigger_level_set(true);
++    } else if (strcmp(command, "TRIGGER_LEVEL LOW") == 0) {
++        xlat_auto_trigger_level_set(false);
++    } else if (strcmp(command, "MODE CLICK") == 0) {
++        xlat_set_mode(XLAT_MODE_CLICK);
++    } else if (strcmp(command, "MODE MOTION") == 0) {
++        xlat_set_mode(XLAT_MODE_MOTION);
++    } else if (strcmp(command, "STATUS") == 0) {
++        web_trigger_status(*running);
++    }
++}
++
++static void web_trigger_run(void)
++{
++    uint32_t remaining = 1000;
++    bool running = false;
++    bool trigger_active = false;
++    uint32_t next_action_at = 0;
++    char command[32];
++    size_t command_length = 0;
++
++    while (1) {
++        uint8_t byte;
++
++        if (HAL_UART_Receive(&huart1, &byte, 1, 1) == HAL_OK) {
++            if (byte == '\r' || byte == '\n') {
++                command[command_length] = '\0';
++                if (command_length > 0) {
++                    web_trigger_handle_command(command, &running, &remaining);
++                }
++                command_length = 0;
++            } else if (command_length < sizeof(command) - 1) {
++                command[command_length++] = (char)byte;
++            } else {
++                command_length = 0;
++            }
++        }
++
++        if (!running || !xlat_initialized) {
++            trigger_active = false;
++            osDelay(1);
++            continue;
++        }
++
++        uint32_t now = xTaskGetTickCount();
++        if ((int32_t)(now - next_action_at) < 0) {
++            osDelay(1);
++            continue;
++        }
++
++        if (!trigger_active) {
++            xlat_auto_trigger_action();
++            trigger_active = true;
++            next_action_at = now + AUTO_TRIGGER_PRESSED_PERIOD_MS;
++        } else {
++            xlat_auto_trigger_turn_off_action();
++            trigger_active = false;
++            remaining--;
++            if (!remaining) {
++                running = false;
++            } else {
++                next_action_at = now + AUTO_TRIGGER_PERIOD_MS - AUTO_TRIGGER_PRESSED_PERIOD_MS + (rand() % 10);
++            }
++        }
++    }
++}
++
++static void vcp_command_task(void const * argument)
++{
++    (void)argument;
++    web_trigger_run();
++}
++
+ // LVGL mutex
+ SemaphoreHandle_t lvgl_mutex;
+ 
+@@ -61,18 +196,20 @@ void xlat_task(void const * argument)
+     /* UART test */
+     printf("\n");
+     printf("******************************\n");
+-    printf("Welcome to XLAT v%s\n", APP_VERSION_FULL);
++    printf("Welcome to itlubs %s\n", APP_VERSION);
+     printf("******************************\n\n");
+ 
+     vcp_writestr("\n");
+     vcp_writestr("******************************\n");
+-    vcp_writestr("Welcome to XLAT v");
+-    vcp_writestr(APP_VERSION_FULL);
++    vcp_writestr("itlubs " APP_VERSION);
+     vcp_writestr("\n");
+     vcp_writestr("******************************\n\n");
+ 
+     xlat_init();
+ 
++    osThreadDef(vcpCommandTask, vcp_command_task, osPriorityNormal, 0, 2048 / 4);
++    osThreadCreate(osThread(vcpCommandTask), NULL);
++
+     /* Infinite loop */
+     for(;;) {
+         xlat_usb_hid_event(); // blocking
+diff --git a/src/xlat.c b/src/xlat.c
+index 90eeb98..7d8e80d 100644
+--- a/src/xlat.c
++++ b/src/xlat.c
+@@ -32,15 +32,35 @@
+ #define __INCLUDE_FROM_HID_DRIVER // NOLINT(*-reserved-identifier)
+ #include "Drivers/USB/Class/Common/HIDParser.h"
+ 
+-static uint32_t last_btn_gpio_timestamp = 0;
++typedef struct gpio_event {
++    uint32_t timestamp;
++    GPIO_PinState level;
++} gpio_event_t;
++
++#define GPIO_EVENT_QUEUE_SIZE 16
++
++static volatile uint32_t last_btn_gpio_timestamp = 0;
++static volatile uint32_t last_gpio_level_timestamp[2] = {0, 0};
+ static uint32_t last_usb_timestamp_us = 0;
+ static uint32_t last_latency_us[LATENCY_TYPE_MAX];
+ static uint64_t average_latency_us_sum[LATENCY_TYPE_MAX]; // sum of all measurements
+ static uint64_t average_latency_us_sum_sq[LATENCY_TYPE_MAX]; // sum of squares, for variance
+ static uint32_t average_latency_us_count[LATENCY_TYPE_MAX];
+ 
+-static volatile uint_fast8_t gpio_irq_producer = 0;
+-static volatile uint_fast8_t gpio_irq_consumer = 0;
++#define USB_POLLING_WINDOW_SIZE 128
++static uint32_t usb_polling_intervals[USB_POLLING_WINDOW_SIZE];
++static uint64_t usb_polling_interval_sum = 0;
++static uint32_t usb_polling_interval_count = 0;
++static uint32_t usb_polling_interval_index = 0;
++static uint32_t usb_polling_last_timestamp = 0;
++static volatile uint32_t usb_polling_rate_hz = 0;
++static volatile uint32_t usb_polling_average_us = 0;
++static volatile uint32_t usb_polling_configured_hz = 0;
++
++static volatile gpio_event_t gpio_event_queue[GPIO_EVENT_QUEUE_SIZE];
++static volatile uint8_t gpio_event_producer = 0;
++static volatile uint8_t gpio_event_consumer = 0;
++static enum latency_type next_both_latency_type = LATENCY_GPIO_TO_USB_PRESS;
+ 
+ // SETTINGS
+ volatile bool       xlat_initialized = false;
+@@ -56,7 +76,7 @@ static bool         auto_trigger_level_high = false;
+ //                  \__/  \__/  \__/  \__/
+ //
+ // Therefore, take a large enough time window to debounce the GPIO interrupt.
+-#define GPIO_IRQ_HOLDOFF_US (50 * 1000)  // 20ms;
++#define GPIO_IRQ_HOLDOFF_US (50 * 1000)  // 50ms
+ static uint32_t gpio_irq_holdoff_us = GPIO_IRQ_HOLDOFF_US;
+ static TimerHandle_t xlat_timer_handle;
+ 
+@@ -219,20 +239,48 @@ static USBH_StatusTypeDef USBH_HID_GetRawData(USBH_HandleTypeDef *phost, uint8_t
+ }
+ 
+ 
+-static int calculate_gpio_to_usb_time(void)
++static int gpio_event_pop_before(uint32_t usb_timestamp, bool oldest, uint32_t *gpio_timestamp)
+ {
+-    // only accept if there was a gpio irq first
+-    if (gpio_irq_producer == gpio_irq_consumer) {
++    uint8_t consumer = gpio_event_consumer;
++    uint8_t producer = gpio_event_producer;
++    int selected = -1;
++    uint8_t cursor = consumer;
++
++    while (cursor != producer) {
++        if ((int32_t)(usb_timestamp - gpio_event_queue[cursor].timestamp) >= 0) {
++            selected = cursor;
++            if (oldest) {
++                break;
++            }
++        }
++        cursor = (uint8_t)((cursor + 1) % GPIO_EVENT_QUEUE_SIZE);
++    }
++
++    if (selected < 0) {
++        return -1;
++    }
++
++    *gpio_timestamp = gpio_event_queue[selected].timestamp;
++    gpio_event_consumer = (uint8_t)((selected + 1) % GPIO_EVENT_QUEUE_SIZE);
++    return 0;
++}
++
++static int calculate_gpio_to_usb_time(enum latency_type type)
++{
++    uint32_t gpio_timestamp;
++
++    if (gpio_event_pop_before(last_usb_timestamp_us,
++                              hw_config_input_trigger_is_both_edges(),
++                              &gpio_timestamp) < 0) {
+         return -1;
+     }
+-    gpio_irq_consumer = gpio_irq_producer;
+ 
+     xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
+     gfx_set_trigger_ready(false);
+     xSemaphoreGive(lvgl_mutex);
+ 
+     // gpio -> usb stats
+-    int32_t us = last_usb_timestamp_us - last_btn_gpio_timestamp;
++    int32_t us = last_usb_timestamp_us - gpio_timestamp;
+     printf("[gpio -> usb] diff: us: %5ld\n", us);
+ 
+     // drop negative values
+@@ -240,13 +288,15 @@ static int calculate_gpio_to_usb_time(void)
+         return -1;
+     }
+ 
+-    xlat_add_latency_measurement(us, LATENCY_GPIO_TO_USB);
++    xlat_add_latency_measurement(us, type);
++    xlat_print_measurement(type);
+ 
+     // send a message to the gfx thread, to refresh the plot
+     struct gfx_event *evt;
+     evt = osPoolAlloc(gfxevt_pool); // Allocate memory for the message
+     evt->type = GFX_EVENT_MEASUREMENT;
+     evt->value = us;
++    evt->measurement_type = type;
+     osMessagePut(msgQGfxTask, (uint32_t)evt, 0U);
+ 
+     return 0;
+@@ -378,19 +428,30 @@ void xlat_usb_hid_event(void)
+                 }
+ 
+                 static uint8_t prev_button = 0;
+-                uint8_t button = hid_raw_data[button_location.byte_offset];
++                uint8_t button = hid_raw_data[button_location.byte_offset] & 1U;
+ 
+                 // Check if the button state has changed
+                 if (button != prev_button) {
+-                    // Only measure on button PRESS, not on RELEASE
+-                    if (button > prev_button) {
+-                        // Save the captured USB event timestamp
+-                        last_usb_timestamp_us = hevt->timestamp;
++                    enum latency_type measurement_type = button > prev_button
++                        ? LATENCY_GPIO_TO_USB_PRESS
++                        : LATENCY_GPIO_TO_USB_RELEASE;
++                    if (hw_config_input_trigger_is_both_edges()) {
++                        measurement_type = next_both_latency_type;
++                    }
+ 
+-                        printf("[%5lu] hid@%lu: ", xTaskGetTickCount(), hevt->timestamp);
+-                        printf("Button: B=0x%02x @ %lu\n", button, hevt->timestamp);
++                    // Save the captured USB event timestamp
++                    last_usb_timestamp_us = hevt->timestamp;
+ 
+-                        calculate_gpio_to_usb_time();
++                    printf("[%5lu] hid@%lu: ", xTaskGetTickCount(), hevt->timestamp);
++                    printf("Button: B=0x%02x (%s) @ %lu\n", button,
++                           measurement_type == LATENCY_GPIO_TO_USB_PRESS ? "press" : "release",
++                           hevt->timestamp);
++
++                    if (calculate_gpio_to_usb_time(measurement_type) == 0
++                        && hw_config_input_trigger_is_both_edges()) {
++                        next_both_latency_type = measurement_type == LATENCY_GPIO_TO_USB_PRESS
++                            ? LATENCY_GPIO_TO_USB_RELEASE
++                            : LATENCY_GPIO_TO_USB_PRESS;
+                     }
+                 }
+ 
+@@ -425,7 +486,7 @@ void xlat_usb_hid_event(void)
+                         printf("[%5lu] hid@%lu: ", xTaskGetTickCount(), hevt->timestamp);
+                         printf("Motion: X=0x%02x, Y=0x%02x @ %lu\n", hid_raw_data[x_location.byte_offset], hid_raw_data[y_location.byte_offset], hevt->timestamp);
+ 
+-                        calculate_gpio_to_usb_time();
++                        calculate_gpio_to_usb_time(LATENCY_GPIO_TO_USB_PRESS);
+                         break; // stop at the first bit of motion in this report
+                     }
+                 }
+@@ -456,17 +517,31 @@ out:
+ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+ {
+     uint32_t cnt = xlat_counter_1mhz_get();
++    GPIO_PinState level = HAL_GPIO_ReadPin(ARDUINO_D12_GPIO_Port, ARDUINO_D12_Pin);
++    uint32_t level_index = level == GPIO_PIN_SET ? 1 : 0;
+     // debounce X ms
+-    if (cnt - last_btn_gpio_timestamp < gpio_irq_holdoff_us) {
++    if (cnt - last_gpio_level_timestamp[level_index] < gpio_irq_holdoff_us) {
+         return;
+     }
++    last_gpio_level_timestamp[level_index] = cnt;
+     last_btn_gpio_timestamp = cnt;
+-    gpio_irq_producer++;
+ 
+-    // disable the interrupt and re-enable later in a timer
+-    hw_exti_interrupts_disable();
+-    xTimerChangePeriodFromISR(xlat_timer_handle, pdMS_TO_TICKS(gpio_irq_holdoff_us / 1000), NULL);
+-    xTimerStartFromISR(xlat_timer_handle, NULL);
++    uint8_t next = (uint8_t)((gpio_event_producer + 1) % GPIO_EVENT_QUEUE_SIZE);
++    if (next == gpio_event_consumer) {
++        // Drop the oldest edge if the USB task has not consumed it yet.
++        gpio_event_consumer = (uint8_t)((gpio_event_consumer + 1) % GPIO_EVENT_QUEUE_SIZE);
++    }
++    gpio_event_queue[gpio_event_producer].timestamp = cnt;
++    gpio_event_queue[gpio_event_producer].level = level;
++    gpio_event_producer = next;
++
++    // In both-edge mode, debounce each level independently so a 30ms
++    // auto-trigger pulse can still capture both press and release.
++    if (!hw_config_input_trigger_is_both_edges()) {
++        hw_exti_interrupts_disable();
++        xTimerChangePeriodFromISR(xlat_timer_handle, pdMS_TO_TICKS(gpio_irq_holdoff_us / 1000), NULL);
++        xTimerStartFromISR(xlat_timer_handle, NULL);
++    }
+ 
+     // print the event
+     printf("[%5lu] GPIO interrupt for pin: %3d @ %lu\n", xTaskGetTickCountFromISR(), GPIO_Pin, cnt);
+@@ -485,6 +560,33 @@ void USBH_HID_EventCallback(USBH_HandleTypeDef *phost, uint32_t timestamp)
+ {
+     struct hid_event *evt;
+ 
++    uint8_t interval = phost->device.CfgDesc.Itf_Desc[phost->device.current_interface].Ep_Desc[0].bInterval;
++    if (interval > 0) {
++        uint32_t configured_interval_us = phost->device.speed == USBH_SPEED_HIGH
++            ? (125U << (interval - 1U))
++            : (1000U * interval);
++        usb_polling_configured_hz = configured_interval_us
++            ? (1000000U + configured_interval_us / 2U) / configured_interval_us
++            : 0;
++    }
++
++    if (usb_polling_last_timestamp != 0) {
++        uint32_t report_interval_us = timestamp - usb_polling_last_timestamp;
++        if (report_interval_us > 0 && report_interval_us <= 20000) {
++            if (usb_polling_interval_count == USB_POLLING_WINDOW_SIZE) {
++                usb_polling_interval_sum -= usb_polling_intervals[usb_polling_interval_index];
++            } else {
++                usb_polling_interval_count++;
++            }
++            usb_polling_intervals[usb_polling_interval_index] = report_interval_us;
++            usb_polling_interval_sum += report_interval_us;
++            usb_polling_interval_index = (usb_polling_interval_index + 1U) % USB_POLLING_WINDOW_SIZE;
++            usb_polling_average_us = (uint32_t)((usb_polling_interval_sum + usb_polling_interval_count / 2U) / usb_polling_interval_count);
++            usb_polling_rate_hz = (uint32_t)((1000000ULL * usb_polling_interval_count + usb_polling_interval_sum / 2U) / usb_polling_interval_sum);
++        }
++    }
++    usb_polling_last_timestamp = timestamp;
++
+     HAL_GPIO_WritePin(ARDUINO_D5_GPIO_Port, ARDUINO_D5_Pin, 1);
+ 
+     evt = osPoolAlloc(hidevt_pool);                     // Allocate memory for the message
+@@ -511,7 +613,7 @@ uint32_t xlat_get_last_button_timestamp_us(void)
+ 
+ uint32_t xlat_get_average_latency(enum latency_type type)
+ {
+-    if (type >= LATENCY_TYPE_MAX) {
++    if (type >= LATENCY_TYPE_MAX || average_latency_us_count[type] == 0) {
+         return 0;
+     }
+     return (uint32_t)(average_latency_us_sum[type] / average_latency_us_count[type]);
+@@ -519,7 +621,7 @@ uint32_t xlat_get_average_latency(enum latency_type type)
+ 
+ uint32_t xlat_get_latency_variance(enum latency_type type)
+ {
+-    if (type >= LATENCY_TYPE_MAX) {
++    if (type >= LATENCY_TYPE_MAX || average_latency_us_count[type] == 0) {
+         return 0;
+     }
+     uint64_t avg = average_latency_us_sum[type] / average_latency_us_count[type];
+@@ -567,6 +669,16 @@ void xlat_reset_latency(void)
+         average_latency_us_sum_sq[i] = 0;
+         average_latency_us_count[i] = 0;
+     }
++    gpio_event_consumer = gpio_event_producer;
++    next_both_latency_type = LATENCY_GPIO_TO_USB_PRESS;
++    last_gpio_level_timestamp[0] = 0;
++    last_gpio_level_timestamp[1] = 0;
++    usb_polling_interval_sum = 0;
++    usb_polling_interval_count = 0;
++    usb_polling_interval_index = 0;
++    usb_polling_last_timestamp = 0;
++    usb_polling_rate_hz = 0;
++    usb_polling_average_us = 0;
+ }
+ 
+ void xlat_set_using_reportid(bool use_reportid)
+@@ -626,15 +738,21 @@ bool xlat_auto_trigger_level_is_high(void)
+     return auto_trigger_level_high;
+ }
+ 
+-void xlat_print_measurement(void)
++void xlat_print_measurement(enum latency_type type)
+ {
+     // print the new measurement to the console in csv format
+-    char buf[50];
+-    snprintf(buf, sizeof(buf), "%lu;%lu;%lu;%lu\r\n",
+-             xlat_get_latency_count(LATENCY_GPIO_TO_USB),
+-             xlat_get_latency_us(LATENCY_GPIO_TO_USB),
+-             xlat_get_average_latency(LATENCY_GPIO_TO_USB),
+-             xlat_get_latency_standard_deviation(LATENCY_GPIO_TO_USB));
++    char buf[128];
++    const char *edge = type == LATENCY_GPIO_TO_USB_RELEASE ? "release" : "press";
++    snprintf(buf, sizeof(buf), "%s;%lu;%lu;%lu;%lu;%lu;%lu;%lu;%lu\r\n",
++             edge,
++             xlat_get_latency_count(type),
++             xlat_get_latency_us(type),
++             xlat_get_average_latency(type),
++             xlat_get_latency_standard_deviation(type),
++             usb_polling_rate_hz,
++             usb_polling_average_us,
++             usb_polling_configured_hz,
++             usb_polling_interval_count);
+     vcp_writestr(buf);
+ }
+ 
+@@ -697,7 +815,7 @@ void xlat_init(void)
+     xlat_initialized = true;
+     printf("XLAT initialized\n");
+ 
+-    char buf[50];
+-    snprintf(buf, sizeof(buf), "count;latency_us;avg_us;stdev_us\r\n");
++    char buf[120];
++    snprintf(buf, sizeof(buf), "edge;count;latency_us;avg_us;stdev_us;polling_hz;polling_avg_us;polling_config_hz;polling_samples\r\n");
+     vcp_writestr(buf);
+ }
+diff --git a/src/xlat.h b/src/xlat.h
+index 613c1c1..c9bc888 100644
+--- a/src/xlat.h
++++ b/src/xlat.h
+@@ -39,6 +39,8 @@ typedef struct hid_data_location {
+ 
+ typedef enum latency_type {
+     LATENCY_GPIO_TO_USB = 0,
++    LATENCY_GPIO_TO_USB_PRESS = LATENCY_GPIO_TO_USB,
++    LATENCY_GPIO_TO_USB_RELEASE,
+     LATENCY_AUDIO_TO_USB,
+     LATENCY_TYPE_MAX,
+ } latency_type_t;
+@@ -62,7 +64,7 @@ uint32_t xlat_get_latency_standard_deviation(enum latency_type type);
+ 
+ void xlat_reset_latency(void);
+ void xlat_add_latency_measurement(uint32_t latency_us, enum latency_type type);
+-void xlat_print_measurement(void);
++void xlat_print_measurement(enum latency_type type);
+ 
+ void xlat_set_gpio_irq_holdoff_us(uint32_t us);
+ uint32_t xlat_get_gpio_irq_holdoff_us(void);
